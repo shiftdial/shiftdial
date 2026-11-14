@@ -288,6 +288,7 @@ def ocr(im: Image.Image) -> str:
 def tool_text(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
     """The text in each image, saved as '<name>.txt'. Images with no text are skipped."""
     outputs: list[Path] = []
+    texts: list[str] = []
     for i, src in enumerate(paths):
         ctx.check()
         ctx.progress(i / len(paths), f"Reading text in {src.name}")
@@ -297,7 +298,9 @@ def tool_text(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Pat
         with Output.next_to(src, "txt") as out:
             out.tmp.write_text(text + "\n", encoding="utf-8")
         outputs.append(out.final)
+        texts.append(text)
     if not outputs:
         raise ValueError(f"No text found in {paths[0].name}" if len(paths) == 1 else "No text found in these images")
+    ctx.clipboard = "\n\n".join(texts)
     ctx.progress(1.0, "Done")
     return outputs

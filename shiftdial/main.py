@@ -7,11 +7,12 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile, QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QLockFile, QPointF, QRectF, QStandardPaths, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
-from shiftdial import __version__
+from shiftdial import __version__, paste
+from shiftdial.engines.files import locks_report
 from shiftdial.hooks import DragHooks
 from shiftdial.jobs import JobQueue
 from shiftdial.registry import TOOL_BY_ID
@@ -98,6 +99,10 @@ def main() -> int:
     def on_chosen(paths: list[Path], item: str) -> None:
         prefs["usage"][item] = prefs["usage"].get(item, 0) + 1
         save_prefs()
+        if item == "file:locks":
+            # later, not inside the drop: a modal box there would stall Explorer's drag
+            QTimer.singleShot(0, lambda: QMessageBox.information(None, "In use by", locks_report(paths)))
+            return
         tool = TOOL_BY_ID.get(item)
         if not (tool and tool.window):
             wheel.track(queue.submit(paths, item, announce=False))
@@ -141,6 +146,22 @@ def main() -> int:
     menu.aboutToShow.connect(lambda: last.setEnabled(queue.last_output_dir is not None))
     menu.addAction(last)
     menu.addAction(QAction("Cancel all jobs", menu, triggered=queue.cancel_all))
+
+    def save_clipboard() -> None:
+        folder = paste.explorer_folder() or Path(
+            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation))
+        try:
+            saved = paste.save_clipboard(folder)
+        except OSError as e:
+            tray.showMessage("Shiftdial", f"Couldn't save the clipboard: {e}", QSystemTrayIcon.MessageIcon.Warning)
+            return
+        if saved is None:
+            tray.showMessage("Shiftdial", "The clipboard has no picture or text to save.")
+            return
+        queue.last_output_dir = saved.parent
+        tray.showMessage(f"Saved {saved.name}", str(saved.parent))
+
+    menu.addAction(QAction("Save clipboard as file", menu, triggered=save_clipboard))
     menu.addSeparator()
 
     def toggle_subfolder(on: bool) -> None:

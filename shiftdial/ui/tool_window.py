@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from shiftdial.engines import image as image_engine
 from shiftdial.engines.ffmpeg import frame_png, probe
+from shiftdial.engines.files import check_name
 from shiftdial.engines.image import POSITIONS
 from shiftdial.engines.pdf import parse_pages
 from shiftdial.registry import TOOL_BY_ID
@@ -152,7 +153,7 @@ class ToolWindow(Panel):
 
     def __init__(self, paths: list[Path], tool_id: str) -> None:
         tool = TOOL_BY_ID[tool_id]
-        super().__init__(f"Shiftdial · {tool.kind} · {tool.label}")
+        super().__init__(f"Shiftdial · {'files' if tool.kind in ('any', 'file') else tool.kind} · {tool.label}")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.paths, self.tool_id = paths, tool_id
         more = f"  +{len(paths) - 1} more" if len(paths) > 1 else ""
@@ -342,6 +343,14 @@ class ToolWindow(Panel):
         mode.currentIndexChanged.connect(mode_changed)
         value.valueChanged.connect(refresh)
         refresh()
+
+    def _build_any_rename(self) -> None:
+        many = len(self.paths) > 1
+        stem = self.paths[0].name if self.paths[0].is_dir() else self.paths[0].name.rsplit(".", 1)[0]
+        self._text("New name", "name", self.paths[0].parent.name if many else stem, validate=check_name)
+        if many:
+            self._spin("Start at", "start", 0, 99999, 1)
+            self.form.addRow(QLabel("Numbered in name order: “name 1”, “name 2”, … Extensions stay."))
 
     def _build_image_compress(self) -> None:
         im, _ = self._first_image()

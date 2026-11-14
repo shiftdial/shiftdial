@@ -28,9 +28,10 @@ def size(p: Path) -> tuple[int, int]:
 # ---- registry ------------------------------------------------------------------------
 
 def test_every_tool_has_an_engine_function() -> None:
-    from shiftdial.engines import archive, audio, image, pdf, video
+    from shiftdial.engines import archive, audio, files, image, pdf, video
 
-    mods = {"image": image, "video": video, "audio": audio, "pdf": pdf, "archive": archive, "folder": archive}
+    mods = {"image": image, "video": video, "audio": audio, "pdf": pdf, "archive": archive, "folder": archive,
+            "any": files, "file": files}
     for t in TOOLS:
         assert callable(getattr(mods[t.kind], f"tool_{t.id.split(':')[1]}")), t.id
 
@@ -39,7 +40,7 @@ def test_tools_for() -> None:
     assert "image:crop" in tools_for([Path("a.png")])
     assert "pdf:merge" not in tools_for([Path("a.pdf")])
     assert "pdf:merge" in tools_for([Path("a.pdf"), Path("b.pdf")])
-    assert tools_for([Path("a.png"), Path("b.mp4")]) == []
+    assert tools_for([Path("a.png"), Path("b.mp4")]) == ["any:rename", "file:hash", "file:locks"]  # mixed
 
 
 # ---- image ---------------------------------------------------------------------------
@@ -259,7 +260,7 @@ def _make_archive(tmp_path: Path, fmt: str, members: dict[str, str]) -> Path:
 @pytest.mark.parametrize("fmt", ["zip", "7z", "tar.gz"])
 def test_extract(tmp_path: Path, fmt: str) -> None:
     arc = _make_archive(tmp_path, fmt, {"a.txt": "A", "sub/b é.txt": "B"})
-    assert tools_for([arc]) == ["archive:extract"]
+    assert tools_for([arc]) == ["archive:extract", "any:rename", "file:hash", "file:locks"]
     [out] = apply_tool([arc], "archive:extract")
     assert out == tmp_path / "pack ü"
     assert (out / "a.txt").read_text(encoding="utf-8") == "A"
@@ -323,7 +324,7 @@ def test_zip_folder_from_tools_wheel(tmp_path: Path, tool: str, ext: str) -> Non
     folder = tmp_path / "Holiday photos"
     (folder / "day 1").mkdir(parents=True)
     (folder / "day 1" / "a.txt").write_text("A", encoding="utf-8")
-    assert tools_for([folder]) == ["folder:zip", "folder:7z", "folder:targz"]
+    assert tools_for([folder]) == ["folder:zip", "folder:7z", "folder:targz", "any:rename"]  # no hash/locks
     assert formats_for([folder]) == ["zip", "7z", "tar.gz"]
     [out] = apply_tool([folder], tool)
     assert out == tmp_path / f"Holiday photos.{ext}"

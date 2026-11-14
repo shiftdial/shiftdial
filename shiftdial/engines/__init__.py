@@ -27,6 +27,7 @@ class JobContext:
 
     on_progress: Callable[[float, str], None] = lambda fraction, stage: None
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    clipboard: str | None = None  # text an engine wants copied when the job is done (a hash, OCR text)
 
     def progress(self, fraction: float, stage: str) -> None:
         self.on_progress(max(0.0, min(1.0, fraction)), stage)
@@ -59,13 +60,13 @@ def convert(paths: list[Path], fmt: str, ctx: JobContext | None = None) -> list[
 def apply_tool(paths: list[Path], tool_id: str, params: dict[str, Any] | None = None,
                ctx: JobContext | None = None) -> list[Path]:
     """Run tool ``tool_id`` ('video:trim') on ``paths``; returns the output files."""
-    from shiftdial.engines import archive, audio, image, pdf, video
+    from shiftdial.engines import archive, audio, files, image, pdf, video
 
     if tool_id not in tools_for(paths):
         raise ValueError(f"{tool_id} doesn't apply to these files. Options: {', '.join(tools_for(paths))}")
     kind, name = tool_id.split(":")
     module = {"image": image, "video": video, "audio": audio, "pdf": pdf, "archive": archive,
-              "folder": archive}[kind]
+              "folder": archive, "any": files, "file": files}[kind]
     return getattr(module, f"tool_{name}")(paths, params or {}, ctx or JobContext())
 
 

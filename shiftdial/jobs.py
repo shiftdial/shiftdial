@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
+from PySide6.QtGui import QGuiApplication
 
 from shiftdial.engines import Cancelled, JobContext, PasswordRequired, run
 from shiftdial.registry import label_for
@@ -95,6 +96,8 @@ class JobQueue(QObject):
     def _on_state(self, job: Job, state: str) -> None:
         if state == "done" and job.outputs:
             self.last_output_dir = job.outputs[0].parent
+        if state == "done" and job.ctx.clipboard and QGuiApplication.instance():
+            QGuiApplication.clipboard().setText(job.ctx.clipboard)  # GUI thread: the signal is queued here
         if job.finished and job in self.jobs:
             self.jobs.remove(job)
 

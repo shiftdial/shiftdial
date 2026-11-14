@@ -24,6 +24,7 @@ ICONS: dict[str, str] = {  # Segoe Fluent Icons code points (thin line glyphs)
     "pdf:compress": "", "archive:extract": "",
     "folder:zip": "", "folder:7z": "", "folder:targz": "",
     "image:grayscale": "", "video:scale": "", "video:subs": "",
+    "image:text": "", "any:rename": "", "file:hash": "", "file:locks": "",
 }
 CLOSE_ICON = ""
 

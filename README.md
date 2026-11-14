@@ -60,6 +60,11 @@ trim, crop, resize, speed, mute, compress to a target size, grab a frame and pul
 video; trim, normalize and mono/stereo for audio; merge, split, rotate, delete pages and compress for PDF.
 Compress and Resize have one-click sizes for Discord, WhatsApp, email and Instagram.
 
+For any file: **Rename** a batch in one go (name 1, name 2, …), **SHA-256** (saved as a .sha256 file and
+copied to the clipboard), and **In use by**, which shows the apps holding a file open when Windows won't
+let you delete it. From the tray, **Save clipboard as file** turns a copied screenshot or text into a
+PNG or TXT in the front-most Explorer folder.
+
 The formats you use most move to the top of the dial. From the tray icon you can send every result into
 a `Converted` subfolder instead of beside the original.
 

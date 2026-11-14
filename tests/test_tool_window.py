@@ -32,6 +32,7 @@ EXPECTED_KEYS = {
     "audio:trim": {"start", "end"},
     "pdf:rotate": {"angle", "pages"},
     "pdf:delete": {"pages"},
+    "any:rename": {"name"},  # one file: no numbering
 }
 REQUIRED_TEXT = {"image:watermark": "© me", "pdf:delete": "2"}  # no usable default
 
@@ -44,7 +45,7 @@ def test_every_window_tool_is_covered() -> None:
 
 @pytest.mark.parametrize("tool_id", sorted(EXPECTED_KEYS))
 def test_window_defaults_run(qtbot, tool_id: str, image: Path, video: Path, audio: Path, pdf: Path) -> None:
-    src = {"image": image, "video": video, "audio": audio, "pdf": pdf}[tool_id.split(":")[0]]
+    src = {"image": image, "video": video, "audio": audio, "pdf": pdf, "any": image}[tool_id.split(":")[0]]
     win = ToolWindow([src], tool_id)
     qtbot.addWidget(win)
     if tool_id in REQUIRED_TEXT:

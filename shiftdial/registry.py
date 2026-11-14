@@ -113,14 +113,25 @@ TOOLS: list[Tool] = [
     Tool("folder:zip", "Zip", False),
     Tool("folder:7z", "7Z", False),
     Tool("folder:targz", "TAR.GZ", False),
+    Tool("any:rename", "Rename", True),  # any file or folder
+    Tool("file:hash", "SHA-256", False),  # any file, no folders
+    Tool("file:locks", "In use by", False),
 ]
 TOOL_BY_ID = {t.id: t for t in TOOLS}
 
 
 def tools_for(paths: list[Path]) -> list[str]:
-    """Tool ids valid for every dragged file."""
+    """Tool ids valid for every dragged file. 'any:' tools fit everything, 'file:' tools anything but folders."""
     kind = kind_of_all(paths)
-    return [t.id for t in TOOLS if t.kind == kind and len(paths) >= t.min_files]
+
+    def fits(t: Tool) -> bool:
+        if t.kind == "any":
+            return True
+        if t.kind == "file":
+            return not any(p.is_dir() for p in paths)
+        return t.kind == kind
+
+    return [t.id for t in TOOLS if fits(t) and len(paths) >= t.min_files]
 
 
 def by_use(items: list[str], usage: dict[str, int]) -> list[str]:
