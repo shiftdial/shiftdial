@@ -56,6 +56,23 @@ def test_window_defaults_run(qtbot, tool_id: str, image: Path, video: Path, audi
     assert outputs and all(o.exists() for o in outputs)
 
 
+@pytest.mark.parametrize(("tool_id", "preset", "expected"), [
+    ("video:compress", "Discord (10 MB)", {"mode": "size", "target_mb": 9.5}),
+    ("image:resize", "Instagram (1080 px)", {"mode": "max_side", "value": 1080}),
+])
+def test_share_presets_fill_the_form(qtbot, tool_id: str, preset: str, expected: dict, image: Path,
+                                     video: Path) -> None:
+    from PySide6.QtWidgets import QComboBox
+
+    win = ToolWindow([video if tool_id.startswith("video") else image], tool_id)
+    qtbot.addWidget(win)
+    share = next(cb for cb in win.findChildren(QComboBox) if cb.itemText(0) == "Custom")
+    share.setCurrentIndex(share.findText(preset))
+    params = win.params()
+    win.close()
+    assert {k: params[k] for k in expected} == expected
+
+
 def test_apply_emits_and_validation_blocks(qtbot, image: Path) -> None:
     win = ToolWindow([image], "image:watermark")
     qtbot.addWidget(win)

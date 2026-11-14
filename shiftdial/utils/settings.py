@@ -1,4 +1,5 @@
-"""%LOCALAPPDATA%\\Shiftdial\\settings.json: {"theme": "system" | "light" | "dark"}."""
+"""%LOCALAPPDATA%\\Shiftdial\\settings.json:
+{"theme": "system" | "light" | "dark", "welcomed": bool, "subfolder": bool, "usage": {"webp": 3, ...}}."""
 from __future__ import annotations
 
 import json
@@ -9,7 +10,7 @@ from typing import Any
 from shiftdial.utils.paths import data_dir
 
 THEMES = ("system", "light", "dark")
-DEFAULTS: dict[str, Any] = {"theme": "system"}
+DEFAULTS: dict[str, Any] = {"theme": "system", "welcomed": False, "subfolder": False, "usage": {}}
 
 
 def path() -> Path:
@@ -22,9 +23,17 @@ def load(file: Path | None = None) -> dict[str, Any]:
         raw = json.loads((file or path()).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raw = {}
-    s = dict(DEFAULTS)
-    if isinstance(raw, dict) and raw.get("theme") in THEMES:
+    if not isinstance(raw, dict):
+        raw = {}
+    s = {**DEFAULTS, "usage": {}}
+    if raw.get("theme") in THEMES:
         s["theme"] = raw["theme"]
+    for key in ("welcomed", "subfolder"):
+        if isinstance(raw.get(key), bool):
+            s[key] = raw[key]
+    usage = raw.get("usage")
+    if isinstance(usage, dict):
+        s["usage"] = {k: v for k, v in usage.items() if isinstance(k, str) and type(v) is int and v > 0}
     return s
 
 

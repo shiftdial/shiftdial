@@ -54,9 +54,14 @@ failed job leaves nothing behind.
 
 \* Uses the Microsoft Office you already have, or LibreOffice.
 
-Tools: resize, compress, crop, rotate, grayscale, watermark and strip EXIF for images; trim, crop,
-resize, speed, mute, compress to a target size, grab a frame and pull out subtitles for video; trim,
-normalize and mono/stereo for audio; merge, split, rotate, delete pages and compress for PDF.
+Tools: resize, compress, crop, rotate, grayscale, watermark, strip EXIF and **get text** (copies the
+words out of a screenshot or photo into a .txt, using Windows' built-in text recognition) for images;
+trim, crop, resize, speed, mute, compress to a target size, grab a frame and pull out subtitles for
+video; trim, normalize and mono/stereo for audio; merge, split, rotate, delete pages and compress for PDF.
+Compress and Resize have one-click sizes for Discord, WhatsApp, email and Instagram.
+
+The formats you use most move to the top of the dial. From the tray icon you can send every result into
+a `Converted` subfolder instead of beside the original.
 
 ## Install
 

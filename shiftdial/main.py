@@ -9,20 +9,28 @@ from pathlib import Path
 
 from PySide6.QtCore import QLockFile, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
+from shiftdial import __version__
 from shiftdial.hooks import DragHooks
 from shiftdial.jobs import JobQueue
 from shiftdial.registry import TOOL_BY_ID
 from shiftdial.ui import theme
 from shiftdial.ui.progress_cards import CardStack
 from shiftdial.ui.tool_window import ToolWindow
+from shiftdial.utils import paths as output_paths
 from shiftdial.utils import settings, startup
 from shiftdial.utils.paths import data_dir
 from shiftdial.wheel import Wheel
 
 log = logging.getLogger("shiftdial")
 DISMISS_AFTER_RELEASE_MS = 400  # the OLE drop reaches the wheel shortly *after* the button-up
+REPO = "https://github.com/shiftdial/shiftdial"
+HOW_TO = ("Start dragging files in Explorer, then press Shift for formats, or Ctrl+Shift for tools. "
+          "Drop on a wedge to convert.")
+ABOUT = (f"Shiftdial {__version__}\n\nConvert files by pressing Shift while you drag them.\n\n"
+         "Copyright (c) 2026 ruchitdonga. Free software under the GNU AGPL v3, with no warranty.\n"
+         f"Source code: {REPO}\n\nBundles ffmpeg (GPL) and PyMuPDF (AGPL).")
 
 def make_icon(size: int = 64) -> QIcon:
     """The dial in miniature, drawn in code so there is no asset to ship (build.ps1 renders the .ico)."""
@@ -64,6 +72,13 @@ def main() -> int:
     prefs = settings.load()
     theme.set_mode(prefs["theme"])
     theme.apply(app)
+    output_paths.use_subfolder = prefs["subfolder"]
+
+    def save_prefs() -> None:
+        try:
+            settings.save(prefs)
+        except OSError:  # a settings write must never break a conversion
+            log.warning("couldn't save settings", exc_info=True)
 
     lock = QLockFile(str(data_dir() / "shiftdial.lock"))
     if not lock.tryLock(100):
@@ -75,11 +90,14 @@ def main() -> int:
     cards = CardStack(retry=queue.retry)
     wheel = Wheel()
     wheel.grab()  # paint once off-screen: loads fonts/glyphs now, so the first pop-in doesn't stutter
+    wheel.usage = prefs["usage"]  # the same dict, so counts saved below reorder the next dial
     queue.job_added.connect(cards.add)
     wheel.released.connect(cards.add)
     tool_windows: set[ToolWindow] = set()
 
     def on_chosen(paths: list[Path], item: str) -> None:
+        prefs["usage"][item] = prefs["usage"].get(item, 0) + 1
+        save_prefs()
         tool = TOOL_BY_ID.get(item)
         if not (tool and tool.window):
             wheel.track(queue.submit(paths, item, announce=False))
@@ -125,6 +143,15 @@ def main() -> int:
     menu.addAction(QAction("Cancel all jobs", menu, triggered=queue.cancel_all))
     menu.addSeparator()
 
+    def toggle_subfolder(on: bool) -> None:
+        prefs["subfolder"] = output_paths.use_subfolder = on
+        save_prefs()
+
+    subfolder = QAction(f"Save into a '{output_paths.SUBFOLDER}' folder", menu, checkable=True,
+                        checked=prefs["subfolder"])
+    subfolder.triggered.connect(toggle_subfolder)
+    menu.addAction(subfolder)
+
     theme_menu = menu.addMenu("Theme")
     theme_group = QActionGroup(theme_menu)
     for mode in settings.THEMES:
@@ -157,10 +184,22 @@ def main() -> int:
     menu.aboutToShow.connect(lambda: autostart.setChecked(startup.is_enabled()))
     menu.addAction(autostart)
     menu.addSeparator()
+
+    def show_tip() -> None:
+        tray.showMessage("How to use Shiftdial", HOW_TO, QSystemTrayIcon.MessageIcon.Information, 12000)
+
+    menu.addAction(QAction("How to use", menu, triggered=show_tip))
+    menu.addAction(QAction("Send feedback", menu, triggered=lambda: os.startfile(f"{REPO}/issues/new")))
+    menu.addAction(QAction("About Shiftdial", menu, triggered=lambda: QMessageBox.about(None, "About Shiftdial", ABOUT)))
     menu.addAction(QAction("Open logs", menu, triggered=lambda: os.startfile(data_dir() / "logs")))
     menu.addAction(QAction("Quit", menu, triggered=app.quit))
     tray.setContextMenu(menu)
+    tray.activated.connect(lambda reason: reason == QSystemTrayIcon.ActivationReason.Trigger and show_tip())
     tray.show()
+    if not prefs["welcomed"]:  # first run: nobody guesses the Shift gesture on their own
+        QTimer.singleShot(1500, show_tip)
+        prefs["welcomed"] = True
+        save_prefs()
 
     def on_quit() -> None:
         hooks.stop()

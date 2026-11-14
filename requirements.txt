@@ -8,6 +8,10 @@ PySide6-Addons==6.12.0  # QtMultimedia for trim/frame previews
 winrt-runtime==3.2.1  # Store build: switch its startup task
 winrt-Windows.ApplicationModel==3.2.1
 winrt-Windows.Foundation==3.2.1
+winrt-Windows.Foundation.Collections==3.2.1  # Get text (Windows OCR)
+winrt-Windows.Media.Ocr==3.2.1
+winrt-Windows.Graphics.Imaging==3.2.1
+winrt-Windows.Storage.Streams==3.2.1
 PyYAML==6.0.3  # data: YAML
 tomli_w==1.2.0  # data: writing TOML (reading is in the standard library)
 xmltodict==1.0.4  # data: XML

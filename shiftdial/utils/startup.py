@@ -2,10 +2,11 @@
 the manifest's startup task, since a packaged app's Run key would land in its private registry."""
 from __future__ import annotations
 
-import asyncio
 import ctypes
 import sys
 import winreg
+
+from shiftdial.utils.aio import wait
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE = "Shiftdial"
@@ -30,7 +31,7 @@ def packaged() -> bool:
 def _task():
     from winrt.windows.applicationmodel import StartupTask
 
-    return asyncio.run(StartupTask.get_async(TASK_ID))
+    return wait(StartupTask.get_async(TASK_ID))
 
 
 def _on(state) -> bool:
@@ -54,7 +55,7 @@ def set_enabled(on: bool, key: str = RUN_KEY) -> None:
         task = _task()
         if not on:
             task.disable()
-        elif not _on(asyncio.run(task.request_enable_async())):
+        elif not _on(wait(task.request_enable_async())):
             raise NeedsSettings
         return
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:

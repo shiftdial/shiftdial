@@ -15,12 +15,29 @@ TEST_KEY = r"Software\ShiftdialTest"
 
 def test_settings_roundtrip_and_bad_files(tmp_path: Path) -> None:
     f = tmp_path / "settings.json"
-    assert settings.load(f) == {"theme": "system"}  # missing
-    settings.save({"theme": "dark"}, f)
-    assert settings.load(f) == {"theme": "dark"}
-    for bad in ("{not json", '{"theme": "neon"}', '["dark"]', '{"theme": 5}'):
+    assert settings.load(f) == settings.DEFAULTS  # missing
+    good = {"theme": "dark", "welcomed": True, "subfolder": True, "usage": {"webp": 3}}
+    settings.save(good, f)
+    assert settings.load(f) == good
+    for bad in ("{not json", '{"theme": "neon"}', '["dark"]', '{"theme": 5}',
+                '{"welcomed": "yes", "subfolder": 1, "usage": [1]}'):
         f.write_text(bad, encoding="utf-8")
-        assert settings.load(f) == {"theme": "system"}
+        assert settings.load(f) == settings.DEFAULTS
+    f.write_text('{"usage": {"jpg": 2, "png": -1, "gif": "x", "webp": true}}', encoding="utf-8")
+    assert settings.load(f)["usage"] == {"jpg": 2}  # only positive whole counts survive
+    assert settings.DEFAULTS["usage"] == {}  # loading never hands out the shared default dict
+
+
+def test_wait_accepts_winrt_style_awaitables() -> None:
+    """WinRT operations are awaitable but not coroutines; asyncio.run() alone rejects them."""
+    from shiftdial.utils.aio import wait
+
+    class Op:
+        def __await__(self):
+            yield from ()
+            return 42
+
+    assert wait(Op()) == 42
 
 
 @pytest.fixture

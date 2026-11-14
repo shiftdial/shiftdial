@@ -260,3 +260,44 @@ def tool_watermark(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> lis
         raise ValueError("Watermark text is empty")
     size, pos, opacity = float(p.get("size", 5)), p.get("position", "bottom-right"), float(p.get("opacity", 60))
     return each(paths, ctx, "Watermark", lambda im: watermark(im, text, size, pos, opacity))
+
+
+def ocr(im: Image.Image) -> str:
+    """Text in ``im`` via Windows' built-in OCR (Windows.Media.Ocr), one output line per text line."""
+    from winrt.windows.graphics.imaging import BitmapPixelFormat, SoftwareBitmap
+    from winrt.windows.media.ocr import OcrEngine
+    from winrt.windows.storage.streams import DataWriter
+
+    from shiftdial.utils.aio import wait
+
+    engine = OcrEngine.try_create_from_user_profile_languages()
+    if engine is None:
+        raise ValueError("Windows has no text-recognition language installed. "
+                         "Add one in Settings › Time & language › Language & region.")
+    im = im.convert("RGBA")
+    limit = OcrEngine.max_image_dimension
+    if max(im.size) > limit:
+        im.thumbnail((limit, limit))
+    writer = DataWriter()
+    writer.write_bytes(im.tobytes("raw", "BGRA"))
+    bitmap = SoftwareBitmap.create_copy_from_buffer(writer.detach_buffer(), BitmapPixelFormat.BGRA8,
+                                                    im.width, im.height)
+    return "\n".join(line.text for line in wait(engine.recognize_async(bitmap)).lines)
+
+
+def tool_text(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
+    """The text in each image, saved as '<name>.txt'. Images with no text are skipped."""
+    outputs: list[Path] = []
+    for i, src in enumerate(paths):
+        ctx.check()
+        ctx.progress(i / len(paths), f"Reading text in {src.name}")
+        text = ocr(load(src))
+        if not text.strip():
+            continue
+        with Output.next_to(src, "txt") as out:
+            out.tmp.write_text(text + "\n", encoding="utf-8")
+        outputs.append(out.final)
+    if not outputs:
+        raise ValueError(f"No text found in {paths[0].name}" if len(paths) == 1 else "No text found in these images")
+    ctx.progress(1.0, "Done")
+    return outputs

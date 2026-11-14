@@ -91,6 +91,7 @@ TOOLS: list[Tool] = [
     Tool("image:grayscale", "Grayscale", False),
     Tool("image:strip_exif", "Strip EXIF", False),
     Tool("image:watermark", "Watermark", True),
+    Tool("image:text", "Get text", False),
     Tool("video:compress", "Compress", True),
     Tool("video:trim", "Trim", True),
     Tool("video:speed", "Speed", True),
@@ -120,6 +121,11 @@ def tools_for(paths: list[Path]) -> list[str]:
     """Tool ids valid for every dragged file."""
     kind = kind_of_all(paths)
     return [t.id for t in TOOLS if t.kind == kind and len(paths) >= t.min_files]
+
+
+def by_use(items: list[str], usage: dict[str, int]) -> list[str]:
+    """Most-used items first, so a favourite settles at the top of the dial; ties keep their order."""
+    return sorted(items, key=lambda i: -usage.get(i, 0))
 
 
 def label_for(item: str) -> str:

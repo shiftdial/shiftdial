@@ -13,6 +13,19 @@ def data_dir() -> Path:
     return d
 
 
+SUBFOLDER = "Converted"
+use_subfolder = False  # tray option: outputs go to '<source folder>\Converted' instead of beside the source
+
+
+def out_dir(folder: Path) -> Path:
+    """Where outputs for files in ``folder`` go. Never nests 'Converted\\Converted'."""
+    if not use_subfolder or folder.name == SUBFOLDER:
+        return folder
+    sub = folder / SUBFOLDER
+    sub.mkdir(exist_ok=True)
+    return sub
+
+
 def split_ext(name: str) -> tuple[str, str]:
     """'a.tar.gz' -> ('a', 'tar.gz'); 'photo.png' -> ('photo', 'png')."""
     if name.lower().endswith(".tar.gz"):
@@ -38,6 +51,7 @@ def unique_path(folder: Path, stem: str, ext: str) -> Path:
 
 def commit_dir(src_dir: Path, folder: Path, name: str) -> Path:
     """Move a finished temp folder to 'folder/name', or 'name (1)', ... never merging into an existing one."""
+    folder = out_dir(folder)
     n = 0
     while True:
         dest = folder / f"{name}{f' ({n})' if n else ''}"
@@ -55,6 +69,7 @@ class Output:
     """Context manager for one output file."""
 
     def __init__(self, folder: Path, stem: str, ext: str) -> None:
+        folder = out_dir(folder)
         self._folder, self._stem, self._ext = folder, stem, ext
         self.final = unique_path(folder, stem, ext)
         self.tmp = tmp_for(self.final)

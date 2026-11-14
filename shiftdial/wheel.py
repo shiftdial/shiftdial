@@ -14,7 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from shiftdial.jobs import Job
-from shiftdial.registry import formats_for, kind_of_all, label_for, tools_for
+from shiftdial.registry import by_use, formats_for, kind_of_all, label_for, tools_for
 from shiftdial.ui import theme
 
 R_OUT = 150
@@ -59,6 +59,7 @@ class Wheel(QWidget):
         self.items: list[str] = []
         self.hover = -1
         self.mode = "formats"
+        self.usage: dict[str, int] = {}  # how often each item was chosen; main shares the saved counts
         self._closing = False
 
         def anim(ms: int, curve: QEasingCurve.Type = QEasingCurve.Type.OutCubic) -> QVariantAnimation:
@@ -94,7 +95,7 @@ class Wheel(QWidget):
         a.start()
 
     def _items_for(self, paths: list[Path]) -> list[str]:
-        return (tools_for if self.mode == "tools" else formats_for)(paths) if paths else []
+        return by_use((tools_for if self.mode == "tools" else formats_for)(paths), self.usage) if paths else []
 
     def popup(self, mode: str = "formats", pos: QPoint | None = None, activate: bool = True) -> None:
         """Show centered on ``pos`` (default: cursor), kept inside the screen."""

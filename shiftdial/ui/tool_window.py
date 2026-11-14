@@ -314,10 +314,19 @@ class ToolWindow(Panel):
     def _build_image_resize(self) -> None:
         im, (w, h) = self._first_image()
         self._preview_label(pil_to_pixmap(im))
+        share = self._combo("Fit for", None, [("Custom", None), ("Instagram (1080 px)", 1080),
+                                              ("Email (1280 px)", 1280), ("Full HD (1920 px)", 1920)])
         mode = self._combo("Resize by", "mode", [("Percent", "percent"), ("Longest side", "max_side")])
         value = self._spin("Size", "value", 1, 50000, 50, suffix=" %")
         result = QLabel()
         self.form.addRow("Result", result)
+
+        def preset() -> None:
+            if share.currentData() is not None:
+                mode.setCurrentIndex(1)  # mode_changed() runs first and resets the value, so set it after
+                value.setValue(share.currentData())
+
+        share.currentIndexChanged.connect(preset)
 
         def refresh() -> None:
             pct = mode.currentData() == "percent"
@@ -454,10 +463,19 @@ class ToolWindow(Panel):
         dur = self._duration()
         mb = self.paths[0].stat().st_size / 1024 / 1024
         self.form.addRow("Now", QLabel(f"{mb:.1f} MB, {fmt_time(dur)}"))
+        share = self._combo("Fit for", None, [("Custom", None), ("Discord (10 MB)", 10), ("WhatsApp (16 MB)", 16),
+                                              ("Email (25 MB)", 25)])
         mode = self._combo("Mode", "mode", [("Target size", "size"), ("Quality (CRF)", "crf")])
         target = self._spin("Target", "target_mb", 1, 100000, max(1, round(mb / 2)), decimals=1, suffix=" MB")
         crf = self._slider("CRF", "crf", 18, 40, 28)
         self.form.addRow(QLabel("CRF: lower = better quality, bigger file. 23 is near-original."))
+
+        def preset() -> None:
+            if share.currentData() is not None:
+                mode.setCurrentIndex(0)
+                target.setValue(share.currentData() * 0.95)  # headroom: containers add a little overhead
+
+        share.currentIndexChanged.connect(preset)
 
         def mode_changed() -> None:
             by_size = mode.currentData() == "size"
