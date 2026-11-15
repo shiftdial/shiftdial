@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from PySide6.QtCore import QLockFile, QPointF, QRectF, QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from shiftdial import __version__, paste
@@ -18,17 +18,18 @@ from shiftdial.jobs import JobQueue
 from shiftdial.registry import TOOL_BY_ID
 from shiftdial.ui import theme
 from shiftdial.ui.progress_cards import CardStack
+from shiftdial.ui.settings_window import SettingsWindow
 from shiftdial.ui.tool_window import ToolWindow
 from shiftdial.utils import paths as output_paths
-from shiftdial.utils import settings, startup
+from shiftdial.utils import settings
 from shiftdial.utils.paths import data_dir
 from shiftdial.wheel import Wheel
 
 log = logging.getLogger("shiftdial")
 DISMISS_AFTER_RELEASE_MS = 400  # the OLE drop reaches the wheel shortly *after* the button-up
 REPO = "https://github.com/shiftdial/shiftdial"
-HOW_TO = ("Start dragging files in Explorer, then press Shift for formats, or Ctrl+Shift for tools. "
-          "Drop on a wedge to convert.")
+HOW_TO = ("Start dragging files in Explorer, then press Shift for formats, or Ctrl+Shift for tools like "
+          "Remove bg, Get text and Rename. Drop on a wedge.")
 ABOUT = (f"Shiftdial {__version__}\n\nConvert files by pressing Shift while you drag them.\n\n"
          "Copyright (c) 2026 ruchitdonga. Free software under the GNU AGPL v3, with no warranty.\n"
          f"Source code: {REPO}\n\nBundles ffmpeg (GPL), PyMuPDF (AGPL), ONNX Runtime (MIT) and the IS-Net "
@@ -164,47 +165,19 @@ def main() -> int:
 
     menu.addAction(QAction("Save clipboard as file", menu, triggered=save_clipboard))
     menu.addSeparator()
+    settings_window: list[SettingsWindow] = []  # at most one; emptied when it closes
 
-    def toggle_subfolder(on: bool) -> None:
-        prefs["subfolder"] = output_paths.use_subfolder = on
-        save_prefs()
+    def open_settings() -> None:
+        if not settings_window:
+            win = SettingsWindow(prefs, save_prefs)
+            win.destroyed.connect(settings_window.clear)
+            settings_window.append(win)
+        win = settings_window[0]
+        win.show()
+        win.raise_()
+        win.activateWindow()
 
-    subfolder = QAction(f"Save into a '{output_paths.SUBFOLDER}' folder", menu, checkable=True,
-                        checked=prefs["subfolder"])
-    subfolder.triggered.connect(toggle_subfolder)
-    menu.addAction(subfolder)
-
-    theme_menu = menu.addMenu("Theme")
-    theme_group = QActionGroup(theme_menu)
-    for mode in settings.THEMES:
-        act = QAction(mode.title(), theme_group, checkable=True, checked=prefs["theme"] == mode)
-
-        def choose(_: bool = False, mode: str = mode) -> None:
-            prefs["theme"] = mode
-            settings.save(prefs)
-            theme.set_mode(mode)
-
-        act.triggered.connect(choose)
-        theme_menu.addAction(act)
-
-    autostart = QAction("Start with Windows", menu, checkable=True)
-    if startup.command() is None:
-        autostart.setEnabled(False)
-        autostart.setText("Start with Windows (in Shiftdial.exe)")
-
-    def toggle_autostart(on: bool) -> None:
-        try:
-            startup.set_enabled(on)
-        except startup.NeedsSettings:
-            tray.showMessage("Shiftdial", "You turned Shiftdial off in Windows' Startup apps. Switch it back on there.")
-            os.startfile("ms-settings:startupapps")
-        except OSError as e:
-            tray.showMessage("Shiftdial", f"Couldn't change startup: {e}", QSystemTrayIcon.MessageIcon.Warning)
-        autostart.setChecked(startup.is_enabled())
-
-    autostart.triggered.connect(toggle_autostart)
-    menu.aboutToShow.connect(lambda: autostart.setChecked(startup.is_enabled()))
-    menu.addAction(autostart)
+    menu.addAction(QAction("Settings…", menu, triggered=open_settings))
     menu.addSeparator()
 
     def show_tip() -> None:
@@ -213,7 +186,6 @@ def main() -> int:
     menu.addAction(QAction("How to use", menu, triggered=show_tip))
     menu.addAction(QAction("Send feedback", menu, triggered=lambda: os.startfile(f"{REPO}/issues/new")))
     menu.addAction(QAction("About Shiftdial", menu, triggered=lambda: QMessageBox.about(None, "About Shiftdial", ABOUT)))
-    menu.addAction(QAction("Open logs", menu, triggered=lambda: os.startfile(data_dir() / "logs")))
     menu.addAction(QAction("Quit", menu, triggered=app.quit))
     tray.setContextMenu(menu)
     tray.activated.connect(lambda reason: reason == QSystemTrayIcon.ActivationReason.Trigger and show_tip())

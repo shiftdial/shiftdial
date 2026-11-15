@@ -10,7 +10,7 @@ from PySide6.QtGui import (
     QCloseEvent, QFont, QImage, QMouseEvent, QPainter, QPaintEvent, QPixmap, QShowEvent, QTransform,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider,
     QVBoxLayout, QWidget,
 )
 
@@ -317,10 +317,28 @@ class ToolWindow(Panel):
         self._preview_label(pil_to_pixmap(im))
         share = self._combo("Fit for", None, [("Custom", None), ("Instagram (1080 px)", 1080),
                                               ("Email (1280 px)", 1280), ("Full HD (1920 px)", 1920)])
-        mode = self._combo("Resize by", "mode", [("Percent", "percent"), ("Longest side", "max_side")])
+        mode = self._combo("Resize by", "mode", [("Percent", "percent"), ("Longest side", "max_side"),
+                                                 ("Width × height", "size")])
         value = self._spin("Size", "value", 1, 50000, 50, suffix=" %")
+        width = self._spin("Width", "width", 1, 50000, w, suffix=" px")
+        height = self._spin("Height", "height", 1, 50000, h, suffix=" px")
+        keep = QCheckBox("Keep proportions")
+        keep.setChecked(True)
+        self.form.addRow("", keep)
+        self._getters.append(lambda p: p.__setitem__("keep", keep.isChecked()))
         result = QLabel()
         self.form.addRow("Result", result)
+
+        def linked(changed: QDoubleSpinBox, other: QDoubleSpinBox, ratio: float) -> None:
+            if keep.isChecked():  # typing a width fills in the matching height for this image, and back
+                other.blockSignals(True)
+                other.setValue(max(1, round(changed.value() * ratio)))
+                other.blockSignals(False)
+            refresh()
+
+        width.valueChanged.connect(lambda _: linked(width, height, h / w))
+        height.valueChanged.connect(lambda _: linked(height, width, w / h))
+        keep.toggled.connect(lambda _: linked(width, height, h / w))
 
         def preset() -> None:
             if share.currentData() is not None:
@@ -330,19 +348,30 @@ class ToolWindow(Panel):
         share.currentIndexChanged.connect(preset)
 
         def refresh() -> None:
+            if mode.currentData() == "size":
+                tw, th = width.value(), height.value()
+                s = min(tw / w, th / h)
+                nw, nh = (round(w * s), round(h * s)) if keep.isChecked() else (round(tw), round(th))
+                result.setText(f"{w} × {h} → {max(1, nw)} × {max(1, nh)}")
+                return
             pct = mode.currentData() == "percent"
             scale = value.value() / 100 if pct else value.value() / max(w, h)
             result.setText(f"{w} × {h} → {max(1, round(w * scale))} × {max(1, round(h * scale))}")
 
         def mode_changed() -> None:
-            pct = mode.currentData() == "percent"
-            value.setSuffix(" %" if pct else " px")
-            value.setValue(50 if pct else min(1920, max(w, h)))
+            by_size = mode.currentData() == "size"
+            for widget in (width, height, keep):
+                self.form.setRowVisible(widget, by_size)
+            self.form.setRowVisible(value, not by_size)
+            if not by_size:
+                pct = mode.currentData() == "percent"
+                value.setSuffix(" %" if pct else " px")
+                value.setValue(50 if pct else min(1920, max(w, h)))
             refresh()
 
         mode.currentIndexChanged.connect(mode_changed)
         value.valueChanged.connect(refresh)
-        refresh()
+        mode_changed()
 
     def _build_any_rename(self) -> None:
         many = len(self.paths) > 1

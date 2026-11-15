@@ -18,7 +18,7 @@ from shiftdial.ui.crop_frame import CropFrame  # noqa: E402
 from shiftdial.ui.tool_window import RangeSlider, ToolWindow  # noqa: E402
 
 EXPECTED_KEYS = {
-    "image:resize": {"mode", "value"},
+    "image:resize": {"mode", "value", "width", "height", "keep"},
     "image:compress": {"quality"},
     "image:rotate": {"op"},
     "image:crop": {"box"},
@@ -72,6 +72,26 @@ def test_share_presets_fill_the_form(qtbot, tool_id: str, preset: str, expected:
     params = win.params()
     win.close()
     assert {k: params[k] for k in expected} == expected
+
+
+def test_resize_width_and_height_stay_linked(qtbot, image: Path) -> None:
+    from PIL import Image as PILImage
+    from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox
+
+    w, h = PILImage.open(image).size
+    win = ToolWindow([image], "image:resize")
+    qtbot.addWidget(win)
+    mode = next(cb for cb in win.findChildren(QComboBox) if cb.findData("size") >= 0)
+    mode.setCurrentIndex(mode.findData("size"))
+    width, height = [sp for sp in win.findChildren(QDoubleSpinBox) if sp.suffix() == " px"][-2:]
+    width.setValue(w // 2)
+    assert height.value() == round(w // 2 * h / w)  # proportions kept
+    win.findChildren(QCheckBox)[0].setChecked(False)
+    height.setValue(7)
+    assert width.value() == w // 2  # unlinked: changing height leaves width alone
+    params = win.params()
+    win.close()
+    assert (params["mode"], params["width"], params["height"], params["keep"]) == ("size", w // 2, 7, False)
 
 
 def test_apply_emits_and_validation_blocks(qtbot, image: Path) -> None:

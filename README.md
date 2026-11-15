@@ -54,7 +54,8 @@ failed job leaves nothing behind.
 
 \* Uses the Microsoft Office you already have, or LibreOffice.
 
-Tools: resize, compress, crop, rotate, grayscale, watermark, strip EXIF and **get text** (copies the
+Tools: resize (by percent, longest side, or exact width × height with proportions kept or not), compress,
+crop, rotate, grayscale, watermark, strip EXIF and **get text** (copies the
 words out of a screenshot or photo into a .txt, using Windows' built-in text recognition) and **remove
 background** (a transparent cutout PNG, made on your PC by the bundled IS-Net model; best on photos with a
 clear subject) for images;
@@ -67,8 +68,9 @@ copied to the clipboard), and **In use by**, which shows the apps holding a file
 let you delete it. From the tray, **Save clipboard as file** turns a copied screenshot or text into a
 PNG or TXT in the front-most Explorer folder.
 
-The formats you use most move to the top of the dial. From the tray icon you can send every result into
-a `Converted` subfolder instead of beside the original.
+The formats you use most move to the top of the dial. **Settings** (right-click the tray icon) holds the
+theme, Start with Windows, an option to send every result into a `Converted` subfolder instead of beside
+the original, and a reset for the dial order.
 
 ## Install
 

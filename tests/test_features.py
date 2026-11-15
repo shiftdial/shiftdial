@@ -143,6 +143,39 @@ def test_remove_background_cuts_out_the_subject(tmp_path: Path) -> None:
     assert cut.getpixel((20, 20))[3] < 30  # the background goes
 
 
+def test_settings_window_applies_and_saves(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:
+    from shiftdial.ui import settings_window, theme
+    from shiftdial.utils import settings
+
+    modes: list[str] = []
+    monkeypatch.setattr(theme, "set_mode", modes.append)
+    monkeypatch.setattr(paths, "use_subfolder", False)
+    prefs = {**settings.DEFAULTS, "usage": {"webp": 4}}
+    saves: list[int] = []
+    win = settings_window.SettingsWindow(prefs, lambda: saves.append(1))
+    qtbot.addWidget(win)
+
+    win.theme.setCurrentIndex(settings.THEMES.index("dark"))
+    assert prefs["theme"] == "dark" and modes == ["dark"]
+    win.subfolder.setChecked(True)
+    assert prefs["subfolder"] and paths.use_subfolder
+    win._reset_order()
+    assert prefs["usage"] == {}
+    assert len(saves) == 3
+    assert not win.startup.isEnabled()  # running from source: Start with Windows needs the built exe
+
+
+def test_resize_to_width_and_height(tmp_path: Path) -> None:
+    src = tmp_path / "wide.png"
+    Image.new("RGB", (400, 200), "blue").save(src)
+    [fit] = apply_tool([src], "image:resize", {"mode": "size", "width": 100, "height": 100, "keep": True})
+    assert Image.open(fit).size == (100, 50)  # fits inside 100×100 without distortion
+    [exact] = apply_tool([src], "image:resize", {"mode": "size", "width": 100, "height": 100, "keep": False})
+    assert Image.open(exact).size == (100, 100)  # stretched to exactly the size asked
+    with pytest.raises(ValueError):
+        apply_tool([src], "image:resize", {"mode": "size", "width": 0, "height": 100})
+
+
 def test_get_text_with_no_text_fails_and_writes_nothing(tmp_path: Path) -> None:
     src = tmp_path / "blank.png"
     Image.new("RGB", (300, 200), "white").save(src)

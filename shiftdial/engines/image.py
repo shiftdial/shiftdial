@@ -140,8 +140,21 @@ def _to_pdf(paths: list[Path], ctx: JobContext) -> Path:
 
 
 def tool_resize(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
-    """mode 'percent' (value = %) or 'max_side' (value = longest side in px)."""
+    """mode 'percent' (value = %), 'max_side' (value = longest side in px) or 'size' (width × height px;
+    keep=True fits each image inside that box without distorting it, keep=False stretches to exactly it)."""
     mode, value = p.get("mode", "percent"), float(p.get("value", 50))
+    if mode == "size":
+        tw, th, keep = round(float(p.get("width", 0))), round(float(p.get("height", 0))), bool(p.get("keep", True))
+        if tw <= 0 or th <= 0:
+            raise ValueError("Width and height must be positive")
+
+        def fit(im: Image.Image) -> Image.Image:
+            if not keep:
+                return im.resize((tw, th), Image.LANCZOS)
+            s = min(tw / im.width, th / im.height)
+            return im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))), Image.LANCZOS)
+
+        return each(paths, ctx, "Resize", fit)
     if value <= 0:
         raise ValueError("Size must be positive")
 
