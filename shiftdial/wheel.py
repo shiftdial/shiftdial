@@ -296,8 +296,11 @@ class Wheel(QWidget):
         self.update()
 
     def dragLeaveEvent(self, e: object) -> None:
+        # Slipping off the dial mustn't lose it: it stays until a drop, Esc, or the button is let go
+        # elsewhere (the hooks' "end" event closes it then).
         if not self._closing:
-            self.dismiss()
+            self._set_hover(-1)
+            self.update()
 
     def dropEvent(self, e: QDropEvent) -> None:
         idx = self._index(e.position())

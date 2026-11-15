@@ -57,6 +57,24 @@ def test_shift_drop_is_forced_to_copy(qtbot, tmp_path: Path) -> None:
     assert sig.args == [files, "png"]
 
 
+def test_dial_survives_slipping_off_it(qtbot, tmp_path: Path) -> None:
+    from PySide6.QtGui import QDragLeaveEvent
+
+    wheel = Wheel()
+    qtbot.addWidget(wheel)
+    wheel.popup("formats", activate=False)
+    top = QPoint(wheel.width() // 2, wheel.height() // 2 - (R_IN + R_OUT) // 2)
+    mime = _mime([tmp_path / "a.png"])
+    QApplication.sendEvent(wheel, QDragEnterEvent(top, MOVE_OR_COPY, mime, NO_BUTTONS, SHIFT))
+    assert wheel.hover == 0
+    QApplication.sendEvent(wheel, QDragLeaveEvent())
+    assert wheel.isVisible() and wheel.hover == -1  # still open, nothing highlighted
+    QApplication.sendEvent(wheel, QDragEnterEvent(top, MOVE_OR_COPY, mime, NO_BUTTONS, SHIFT))
+    assert wheel.hover == 0  # coming back works
+    wheel.end_drag()  # button let go somewhere else
+    assert not wheel.isVisible()
+
+
 def test_move_only_source_is_refused(qtbot, tmp_path: Path) -> None:
     wheel = Wheel()
     qtbot.addWidget(wheel)
