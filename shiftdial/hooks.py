@@ -16,13 +16,14 @@ log = logging.getLogger(__name__)
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
 WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP = 0x0200, 0x0201, 0x0202
 
-VK_SHIFT, VK_CONTROL, VK_ESCAPE, VK_F8, VK_F9 = 0x10, 0x11, 0x1B, 0x77, 0x78
-VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL = 0xA0, 0xA1, 0xA2, 0xA3
+VK_SHIFT, VK_CONTROL, VK_MENU, VK_CAPITAL, VK_ESCAPE, VK_F8, VK_F9 = 0x10, 0x11, 0x12, 0x14, 0x1B, 0x77, 0x78
+VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU = 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5
 VK_LBUTTON, VK_RBUTTON = 0x01, 0x02
 SHIFTS = {VK_SHIFT, VK_LSHIFT, VK_RSHIFT}
 CTRLS = {VK_CONTROL, VK_LCONTROL, VK_RCONTROL}
-TRIGGERS = SHIFTS | CTRLS | {VK_F8, VK_F9}
-WATCHED = (VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_F8, VK_F9, VK_ESCAPE)
+KEY_SETS = {"shift": SHIFTS, "caps": {VK_CAPITAL}, "alt": {VK_MENU, VK_LMENU, VK_RMENU}}  # Settings › Dial key
+WATCHED = (VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU, VK_CAPITAL, VK_F8, VK_F9,
+           VK_ESCAPE)
 
 DRAG_THRESHOLD_PX = 8
 POLL_S = 0.008
@@ -38,6 +39,7 @@ class DragDetector:
         self._dragging = False
         self._source_ok = False
         self._keys: set[int] = set()
+        self.format_keys: set[int] = SHIFTS  # the key that opens the formats dial; + Ctrl opens tools
 
     def mouse(self, msg: int, x: int, y: int) -> None:
         if msg == WM_LBUTTONDOWN:
@@ -59,7 +61,7 @@ class DragDetector:
             if fresh and self._dragging and self._source_ok:
                 if vk == VK_ESCAPE:
                     self._emit("dismiss")
-                elif vk in TRIGGERS:
+                elif vk in self.format_keys or vk in CTRLS or vk in (VK_F8, VK_F9):
                     self._trigger()
         elif msg in (WM_KEYUP, WM_SYSKEYUP):
             self._keys.discard(vk)  # releasing Shift leaves the wheel up
@@ -67,10 +69,10 @@ class DragDetector:
     def _trigger(self) -> None:
         if not (self._dragging and self._source_ok):
             return
-        shift, ctrl = bool(self._keys & SHIFTS), bool(self._keys & CTRLS)
-        if VK_F9 in self._keys or (shift and ctrl):
+        key, ctrl = bool(self._keys & self.format_keys), bool(self._keys & CTRLS)
+        if VK_F9 in self._keys or (key and ctrl):
             self._emit("tools")
-        elif VK_F8 in self._keys or shift:
+        elif VK_F8 in self._keys or key:
             self._emit("formats")
 
 
@@ -151,8 +153,13 @@ class DragHooks(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._poller = InputPoller(DragDetector(self.event.emit, is_explorer_at))
+        self._detector = DragDetector(self.event.emit, is_explorer_at)
+        self._poller = InputPoller(self._detector)
         self._stop = threading.Event()
+
+    def set_key(self, name: str) -> None:
+        """'shift', 'caps' or 'alt' (KEY_SETS). One attribute swap, so the polling thread needs no lock."""
+        self._detector.format_keys = KEY_SETS[name]
 
     def start(self) -> None:
         threading.Thread(target=self._run, name="drag-watch", daemon=True).start()

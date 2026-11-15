@@ -74,6 +74,7 @@ class Job(QObject):
 
 class JobQueue(QObject):
     job_added = Signal(object)
+    finished = Signal(object, float)  # job, seconds it took (done, failed or cancelled)
 
     def __init__(self) -> None:
         super().__init__()
@@ -100,6 +101,7 @@ class JobQueue(QObject):
             QGuiApplication.clipboard().setText(job.ctx.clipboard)  # GUI thread: the signal is queued here
         if job.finished and job in self.jobs:
             self.jobs.remove(job)
+            self.finished.emit(job, time.monotonic() - (job.started_at or time.monotonic()))
 
     def retry(self, job: Job, extra: dict[str, Any]) -> Job:
         """Run ``job`` again with extra params, e.g. a password."""

@@ -183,3 +183,42 @@ def tool_compress(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list
     """Downsample images above 150 dpi to JPEG q75, drop unused objects, deflate streams."""
     return _each(paths, ctx, "Compress",
                  lambda doc: doc.rewrite_images(dpi_threshold=160, dpi_target=150, quality=75))
+
+
+def tool_lock(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
+    """Each PDF as '<name> locked.pdf', AES-256 encrypted: the password is needed to open it."""
+    password = str(p.get("password", ""))
+    if not password:
+        raise ValueError("Password is empty")
+    outputs: list[Path] = []
+    for i, src in enumerate(paths):
+        ctx.check()
+        ctx.progress(i / len(paths), f"Locking {src.name}")
+        with _open(src) as doc, Output(src.parent, f"{split_ext(src.name)[0]} locked", "pdf") as out:
+            doc.save(out.tmp, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=password, owner_pw=password,
+                     garbage=3, deflate=True)
+        outputs.append(out.final)
+    ctx.progress(1.0, "Done")
+    return outputs
+
+
+def tool_unlock(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
+    """Each protected PDF saved again with no password. Asks for it via PasswordRequired."""
+    from shiftdial.engines import PasswordRequired
+
+    password: str | None = p.get("password") or None
+    outputs: list[Path] = []
+    for i, src in enumerate(paths):
+        ctx.check()
+        ctx.progress(i / len(paths), f"Unlocking {src.name}")
+        with pymupdf.open(src) as doc:
+            if not doc.is_encrypted:
+                raise ValueError(f"{src.name} isn't password protected")
+            if doc.needs_pass and (password is None or not doc.authenticate(password)):
+                raise PasswordRequired(src.name, wrong=password is not None)
+            stem = split_ext(src.name)[0].removesuffix(" locked")  # 'r locked.pdf' → 'r.pdf' (or 'r (1).pdf')
+            with Output(src.parent, stem, "pdf") as out:
+                doc.save(out.tmp, encryption=pymupdf.PDF_ENCRYPT_NONE, garbage=3, deflate=True)
+        outputs.append(out.final)
+    ctx.progress(1.0, "Done")
+    return outputs

@@ -33,8 +33,11 @@ EXPECTED_KEYS = {
     "pdf:rotate": {"angle", "pages"},
     "pdf:delete": {"pages"},
     "any:rename": {"name"},  # one file: no numbering
+    "pdf:lock": {"password"},
+    "any:lock7z": {"password"},
 }
-REQUIRED_TEXT = {"image:watermark": "© me", "pdf:delete": "2"}  # no usable default
+REQUIRED_TEXT = {"image:watermark": "© me", "pdf:delete": "2", "pdf:lock": "hunter22",  # no usable default
+                 "any:lock7z": "hunter22"}
 
 
 def test_every_window_tool_is_covered() -> None:
@@ -49,7 +52,8 @@ def test_window_defaults_run(qtbot, tool_id: str, image: Path, video: Path, audi
     win = ToolWindow([src], tool_id)
     qtbot.addWidget(win)
     if tool_id in REQUIRED_TEXT:
-        win.findChildren(QLineEdit)[0].setText(REQUIRED_TEXT[tool_id])
+        for ed in win.findChildren(QLineEdit):  # every field: the Lock tools ask for the password twice
+            ed.setText(REQUIRED_TEXT[tool_id])
     params = win.params()
     assert set(params) == EXPECTED_KEYS[tool_id]
     win.close()  # releases the media player's file handle

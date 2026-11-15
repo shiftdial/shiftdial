@@ -1,18 +1,23 @@
 """Entry point: tray icon, single-instance lock, logging, wheel + job queue wiring."""
 from __future__ import annotations
 
+import ctypes
+import json
 import logging
 import os
 import sys
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
-from PySide6.QtCore import QLockFile, QPointF, QRectF, QStandardPaths, Qt, QTimer
+from PySide6.QtCore import QLockFile, QObject, QPointF, QRectF, QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from shiftdial import __version__, paste
-from shiftdial.engines.files import locks_report
+from shiftdial.engines.files import locks_report, same_report
 from shiftdial.hooks import DragHooks
 from shiftdial.jobs import JobQueue
 from shiftdial.registry import TOOL_BY_ID
@@ -34,6 +39,34 @@ ABOUT = (f"Shiftdial {__version__}\n\nConvert files by pressing Shift while you 
          "Copyright (c) 2026 ruchitdonga. Free software under the GNU AGPL v3, with no warranty.\n"
          f"Source code: {REPO}\n\nBundles ffmpeg (GPL), PyMuPDF (AGPL), ONNX Runtime (MIT) and the IS-Net "
          "background-removal model (Apache-2.0).")
+SERVER = f"Shiftdial-{os.environ.get('USERNAME', 'user')}"  # right-click requests reach the running app here
+LONG_JOB_S = 10  # jobs at least this long get a notification when they finish
+
+
+def dial_request(argv: list[str]) -> tuple[str, list[str]] | None:
+    """('formats' | 'tools', paths) from the right-click menu's '--dial MODE PATH...', else None."""
+    if len(argv) >= 3 and argv[0] == "--dial" and argv[1] in ("formats", "tools"):
+        return argv[1], argv[2:]
+    return None
+
+
+def forward(request: tuple[str, list[str]]) -> bool:
+    """Hand a right-click request to the Shiftdial that's already running; False if none is."""
+    sock = QLocalSocket()
+    sock.connectToServer(SERVER)
+    if not sock.waitForConnected(500):
+        return False
+    ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY: Explorer gave us the foreground; pass it on
+    sock.write((json.dumps({"mode": request[0], "paths": request[1]}) + "\n").encode())
+    sock.waitForBytesWritten(1000)
+    sock.disconnectFromServer()
+    return True
+
+
+class _Relay(QObject):
+    """Carries a result from a worker thread to the GUI thread (signals cross threads queued)."""
+
+    report = Signal(str, str)
 
 def make_icon(size: int = 64) -> QIcon:
     """The dial in miniature, drawn in code so there is no asset to ship (build.ps1 renders the .ico)."""
@@ -83,6 +116,9 @@ def main() -> int:
         except OSError:  # a settings write must never break a conversion
             log.warning("couldn't save settings", exc_info=True)
 
+    request = dial_request(sys.argv[1:])
+    if request and forward(request):
+        return 0
     lock = QLockFile(str(data_dir() / "shiftdial.lock"))
     if not lock.tryLock(100):
         return 0
@@ -97,6 +133,15 @@ def main() -> int:
     queue.job_added.connect(cards.add)
     wheel.released.connect(cards.add)
     tool_windows: set[ToolWindow] = set()
+    relay = _Relay()
+    relay.report.connect(lambda title, text: QMessageBox.information(None, title, text))
+
+    def compare(paths: list[Path]) -> None:
+        try:
+            text = same_report(paths)
+        except OSError as e:
+            text = f"Couldn't compare: {e}"
+        relay.report.emit("Same?", text)
 
     def on_chosen(paths: list[Path], item: str) -> None:
         prefs["usage"][item] = prefs["usage"].get(item, 0) + 1
@@ -104,6 +149,9 @@ def main() -> int:
         if item == "file:locks":
             # later, not inside the drop: a modal box there would stall Explorer's drag
             QTimer.singleShot(0, lambda: QMessageBox.information(None, "In use by", locks_report(paths)))
+            return
+        if item == "file:same":
+            threading.Thread(target=compare, args=(paths,), daemon=True).start()  # big files take a while
             return
         tool = TOOL_BY_ID.get(item)
         if not (tool and tool.window):
@@ -133,12 +181,61 @@ def main() -> int:
             QTimer.singleShot(DISMISS_AFTER_RELEASE_MS, wheel, wheel.end_drag)
 
     hooks = DragHooks()
+    hooks.set_key(prefs["key"])
     hooks.event.connect(on_drag_event)
     hooks.start()
 
+    # Right-click menu: each selected file may start its own copy; gather them briefly, then open one dial.
+    pending: dict[str, Any] = {"mode": "formats", "paths": []}
+    gather = QTimer(app, singleShot=True, interval=400)
+
+    def open_pending() -> None:
+        found = [Path(p) for p in dict.fromkeys(pending["paths"]) if Path(p).exists()]
+        pending["paths"] = []
+        if found:
+            wheel.pick(pending["mode"], found)
+
+    def take(msg: Any) -> None:
+        if isinstance(msg, dict) and msg.get("mode") in ("formats", "tools") and isinstance(msg.get("paths"), list):
+            pending["mode"] = msg["mode"]
+            pending["paths"] += [str(p) for p in msg["paths"]]
+            gather.start()
+
+    gather.timeout.connect(open_pending)
+    server = QLocalServer(app)
+    QLocalServer.removeServer(SERVER)  # a stale pipe from a crashed run would block listen()
+    if not server.listen(SERVER):
+        log.warning("right-click server: %s", server.errorString())
+
+    def on_connection() -> None:
+        sock = server.nextPendingConnection()
+
+        def read() -> None:
+            for line in bytes(sock.readAll()).decode("utf-8", "replace").splitlines():
+                try:
+                    take(json.loads(line))
+                except ValueError:
+                    log.warning("ignored a malformed dial request")
+
+        sock.readyRead.connect(read)
+        sock.disconnected.connect(sock.deleteLater)
+        read()  # data may already be waiting
+
+    server.newConnection.connect(on_connection)
+    if request:  # started by the right-click menu with nothing running yet
+        take({"mode": request[0], "paths": request[1]})
+
     tray = QSystemTrayIcon(make_icon())
-    tray.setToolTip("Shiftdial: drag files from Explorer, then hold Shift (tools: Ctrl+Shift)")
+    tray.setToolTip("Shiftdial: drag files from Explorer, then press your dial key (Shift unless changed)")
     menu = QMenu()
+
+    def on_finished(job: Any, seconds: float) -> None:
+        if prefs["notify"] and seconds >= LONG_JOB_S and job.state in ("done", "failed"):
+            where = f"Saved in {job.outputs[0].parent}" if job.outputs else job.error
+            tray.showMessage(f"{'Done' if job.state == 'done' else 'Failed'}: {job.title}", where,
+                             QSystemTrayIcon.MessageIcon.Information, 8000)
+
+    queue.finished.connect(on_finished)
 
     def open_last() -> None:
         if queue.last_output_dir:
@@ -169,7 +266,7 @@ def main() -> int:
 
     def open_settings() -> None:
         if not settings_window:
-            win = SettingsWindow(prefs, save_prefs)
+            win = SettingsWindow(prefs, save_prefs, hooks.set_key)
             win.destroyed.connect(settings_window.clear)
             settings_window.append(win)
         win = settings_window[0]

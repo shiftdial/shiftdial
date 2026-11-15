@@ -16,7 +16,8 @@ TEST_KEY = r"Software\ShiftdialTest"
 def test_settings_roundtrip_and_bad_files(tmp_path: Path) -> None:
     f = tmp_path / "settings.json"
     assert settings.load(f) == settings.DEFAULTS  # missing
-    good = {"theme": "dark", "welcomed": True, "subfolder": True, "usage": {"webp": 3}}
+    good = {"theme": "dark", "key": "caps", "welcomed": True, "subfolder": True, "notify": False,
+            "usage": {"webp": 3}}
     settings.save(good, f)
     assert settings.load(f) == good
     for bad in ("{not json", '{"theme": "neon"}', '["dark"]', '{"theme": 5}',

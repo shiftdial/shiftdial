@@ -40,7 +40,8 @@ def test_tools_for() -> None:
     assert "image:crop" in tools_for([Path("a.png")])
     assert "pdf:merge" not in tools_for([Path("a.pdf")])
     assert "pdf:merge" in tools_for([Path("a.pdf"), Path("b.pdf")])
-    assert tools_for([Path("a.png"), Path("b.mp4")]) == ["any:rename", "file:hash", "file:locks"]  # mixed
+    assert tools_for([Path("a.png"), Path("b.mp4")]) == [  # mixed kinds: only the any-file tools
+        "any:rename", "file:hash", "file:locks", "file:same", "any:lock7z"]
 
 
 # ---- image ---------------------------------------------------------------------------
@@ -260,7 +261,7 @@ def _make_archive(tmp_path: Path, fmt: str, members: dict[str, str]) -> Path:
 @pytest.mark.parametrize("fmt", ["zip", "7z", "tar.gz"])
 def test_extract(tmp_path: Path, fmt: str) -> None:
     arc = _make_archive(tmp_path, fmt, {"a.txt": "A", "sub/b é.txt": "B"})
-    assert tools_for([arc]) == ["archive:extract", "any:rename", "file:hash", "file:locks"]
+    assert tools_for([arc]) == ["archive:extract", "any:rename", "file:hash", "file:locks", "any:lock7z"]
     [out] = apply_tool([arc], "archive:extract")
     assert out == tmp_path / "pack ü"
     assert (out / "a.txt").read_text(encoding="utf-8") == "A"
@@ -324,7 +325,7 @@ def test_zip_folder_from_tools_wheel(tmp_path: Path, tool: str, ext: str) -> Non
     folder = tmp_path / "Holiday photos"
     (folder / "day 1").mkdir(parents=True)
     (folder / "day 1" / "a.txt").write_text("A", encoding="utf-8")
-    assert tools_for([folder]) == ["folder:zip", "folder:7z", "folder:targz", "any:rename"]  # no hash/locks
+    assert tools_for([folder]) == ["folder:zip", "folder:7z", "folder:targz", "any:rename", "any:lock7z"]
     assert formats_for([folder]) == ["zip", "7z", "tar.gz"]
     [out] = apply_tool([folder], tool)
     assert out == tmp_path / f"Holiday photos.{ext}"

@@ -34,8 +34,8 @@ def _archive_stem(paths: list[Path]) -> str:
     return paths[0].parent.name or "Archive"
 
 
-def _open(fmt: str, tmp: Path) -> tuple[Any, Callable[[Path, str], None]]:
-    """The archive writer and its add-one-file function."""
+def _open(fmt: str, tmp: Path, password: str | None = None) -> tuple[Any, Callable[[Path, str], None]]:
+    """The archive writer and its add-one-file function. ``password`` is for 7Z only (AES-256)."""
     if fmt == "zip":
         z = zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6)
         return z, z.write
@@ -43,17 +43,19 @@ def _open(fmt: str, tmp: Path) -> tuple[Any, Callable[[Path, str], None]]:
         t = tarfile.open(tmp, "w:gz")
         return t, lambda f, name: t.add(f, name, recursive=False)
     if fmt == "7z":
-        s = py7zr.SevenZipFile(tmp, "w")
+        s = py7zr.SevenZipFile(tmp, "w", password=password)
+        if password:
+            s.set_encrypted_header(True)  # hide the file names too, not just the contents
         return s, s.write
     raise ValueError(fmt)
 
 
-def make(paths: list[Path], fmt: str, ctx: JobContext) -> Path:
+def make(paths: list[Path], fmt: str, ctx: JobContext, password: str | None = None) -> Path:
     entries = _entries(paths)
     total = sum(f.stat().st_size for f, _ in entries) or 1
     done = 0
     with Output(paths[0].parent, _archive_stem(paths), fmt) as out:
-        writer, add = _open(fmt, out.tmp)
+        writer, add = _open(fmt, out.tmp, password)
         with writer:
             for f, name in entries:
                 ctx.check()

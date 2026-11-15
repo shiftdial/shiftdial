@@ -119,6 +119,43 @@ def locks_report(paths: list[Path]) -> str:
     return f"{names} is open in:\n\n{apps}\n\nClose it there, then try again."
 
 
+def same_report(paths: list[Path]) -> str:
+    """Which of these files have identical content. Only files of equal size are hashed."""
+    by_size: dict[int, list[Path]] = {}
+    for f in paths:
+        by_size.setdefault(f.stat().st_size, []).append(f)
+    groups: list[list[str]] = []
+    for files in by_size.values():
+        by_hash: dict[str, list[str]] = {}
+        for f in files if len(files) > 1 else []:
+            with f.open("rb") as fh:
+                by_hash.setdefault(hashlib.file_digest(fh, "sha256").hexdigest(), []).append(f.name)
+        groups += [names for names in by_hash.values() if len(names) > 1]
+    if len(paths) == 2:
+        a, b = paths[0].name, paths[1].name
+        return f"{a} and {b} are identical." if groups else f"{a} and {b} are different."
+    if groups and len(groups[0]) == len(paths):
+        return f"All {len(paths)} files are identical."
+    if not groups:
+        return f"All {len(paths)} files are different."
+    return "Identical:\n" + "\n".join("• " + ", ".join(g) for g in groups) + "\n\nThe others are all different."
+
+
+def tool_same(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
+    # shortcut: the app shows this report in a dialog and never queues it; the CLI prints it as the message
+    raise ValueError(same_report(paths))
+
+
+def tool_lock7z(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
+    """Pack into an AES-256 7Z whose file names are encrypted too."""
+    from shiftdial.engines import archive
+
+    password = str(p.get("password", ""))
+    if not password:
+        raise ValueError("Password is empty")
+    return [archive.make(paths, "7z", ctx, password)]
+
+
 def tool_locks(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
     # shortcut: the app shows this report in a dialog and never queues it; the CLI prints it as the message
     raise ValueError(locks_report(paths))

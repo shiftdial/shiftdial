@@ -373,6 +373,32 @@ class ToolWindow(Panel):
         value.valueChanged.connect(refresh)
         mode_changed()
 
+    def _new_password(self) -> None:
+        """Password typed twice (hidden), checked before Apply. Shared by every Lock tool."""
+        first = self._text("Password", "password")
+        again = QLineEdit()
+        for ed in (first, again):
+            ed.setEchoMode(QLineEdit.EchoMode.Password)
+        self.form.addRow("Again", again)
+
+        def check(_: dict[str, Any]) -> None:
+            if len(first.text()) < 4:
+                raise ValueError("Use at least 4 characters")
+            if again.text() != first.text():
+                raise ValueError("The two passwords don't match")
+
+        self._getters.append(check)
+        warning = QLabel("There's no way to open the file again if you forget this password.")
+        warning.setProperty("role", "sub")
+        self.form.addRow(warning)
+
+    def _build_pdf_lock(self) -> None:
+        self._new_password()
+
+    def _build_any_lock7z(self) -> None:
+        self._new_password()
+        self.form.addRow(QLabel("Packs into an AES-256 7Z; the file names inside are hidden too."))
+
     def _build_any_rename(self) -> None:
         many = len(self.paths) > 1
         stem = self.paths[0].name if self.paths[0].is_dir() else self.paths[0].name.rsplit(".", 1)[0]

@@ -6,7 +6,9 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QLineF, QPoint, QPointF, QRectF, Qt, QTimer, QVariantAnimation, Signal
+from PySide6.QtCore import (
+    QEasingCurve, QEvent, QLineF, QPoint, QPointF, QRectF, Qt, QTimer, QVariantAnimation, Signal,
+)
 from PySide6.QtGui import (
     QCursor, QDragEnterEvent, QDragMoveEvent, QDropEvent, QGuiApplication, QKeyEvent, QMouseEvent, QPainter,
     QPainterPath, QPaintEvent, QPen,
@@ -60,6 +62,7 @@ class Wheel(QWidget):
         self.hover = -1
         self.mode = "formats"
         self.usage: dict[str, int] = {}  # how often each item was chosen; main shares the saved counts
+        self._picking = False  # opened from the right-click menu: choose by clicking instead of dropping
         self._closing = False
 
         def anim(ms: int, curve: QEasingCurve.Type = QEasingCurve.Type.OutCubic) -> QVariantAnimation:
@@ -122,7 +125,26 @@ class Wheel(QWidget):
         if activate:
             self.activateWindow()  # so Esc reaches us; during a drag the hooks handle Esc
 
+    def pick(self, mode: str, paths: list[Path]) -> None:
+        """Open at the cursor for files chosen in Explorer's right-click menu; a click picks the wedge."""
+        self.popup(mode, activate=True)
+        self.paths, self.items, self._picking = paths, self._items_for(paths), True
+        self.setMouseTracking(True)
+        self.update()
+
+    def mouseMoveEvent(self, e: QMouseEvent) -> None:
+        if self._picking:
+            self._set_hover(self._index(e.position()))
+            self.update()
+
+    def changeEvent(self, e: QEvent) -> None:
+        if e.type() == QEvent.Type.ActivationChange and self._picking and not self.isActiveWindow():
+            self.dismiss()  # clicked somewhere else
+        super().changeEvent(e)
+
     def dismiss(self) -> None:
+        self._picking = False
+        self.setMouseTracking(False)
         job, self._job = self._job, None
         if job:
             job.progress.disconnect(self._on_job_progress)
@@ -148,6 +170,14 @@ class Wheel(QWidget):
             self.dismiss()
 
     def mousePressEvent(self, e: QMouseEvent) -> None:
+        if self._picking:
+            idx = self._index(e.position())
+            if idx < 0:
+                self.dismiss()
+                return
+            self._picking = False
+            self._choose(self.items[idx])
+            return
         job = self._job
         if job and job.state == "done" and job.outputs:
             os.startfile(job.outputs[0].parent)  # noqa: S606 - opens a folder we wrote to
@@ -264,7 +294,11 @@ class Wheel(QWidget):
         if idx < 0 or self._closing or not self._accept_as_copy(e):
             e.ignore()
             return
-        self.chosen.emit(self.paths, self.items[idx])
+        self._choose(self.items[idx])
+
+    def _choose(self, item: str) -> None:
+        """Hand the pick to main; unless that started a progress readout, flash and close."""
+        self.chosen.emit(self.paths, item)
         if self._job:
             return
         if theme.motion():

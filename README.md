@@ -60,17 +60,21 @@ words out of a screenshot or photo into a .txt, using Windows' built-in text rec
 background** (a transparent cutout PNG, made on your PC by the bundled IS-Net model; best on photos with a
 clear subject) for images;
 trim, crop, resize, speed, mute, compress to a target size, grab a frame and pull out subtitles for
-video; trim, normalize and mono/stereo for audio; merge, split, rotate, delete pages and compress for PDF.
+video; trim, normalize and mono/stereo for audio; merge, split, rotate, delete pages, compress, and **lock / unlock** (AES-256 password) for PDF.
 Compress and Resize have one-click sizes for Discord, WhatsApp, email and Instagram.
 
 For any file: **Rename** a batch in one go (name 1, name 2, …), **SHA-256** (saved as a .sha256 file and
-copied to the clipboard), and **In use by**, which shows the apps holding a file open when Windows won't
-let you delete it. From the tray, **Save clipboard as file** turns a copied screenshot or text into a
+copied to the clipboard), **In use by**, which shows the apps holding a file open when Windows won't
+let you delete it, **Same?**, which tells you whether two or more files are byte-for-byte identical, and
+**Lock 7Z**, which packs files or folders into a password-protected 7Z (AES-256, file names hidden too). From the tray, **Save clipboard as file** turns a copied screenshot or text into a
 PNG or TXT in the front-most Explorer folder.
 
 The formats you use most move to the top of the dial. **Settings** (right-click the tray icon) holds the
-theme, Start with Windows, an option to send every result into a `Converted` subfolder instead of beside
-the original, and a reset for the dial order.
+theme, the dial key (Shift, Caps Lock or Alt), Start with Windows, a notification when a long job
+finishes, an option to send every result into a `Converted` subfolder instead of beside the original, and
+a reset for the dial order. The zip version can also add **Convert with Shiftdial** and **Shiftdial tools**
+to Explorer's right-click menu (under *Show more options* on Windows 11); the dial then opens at the cursor
+and you click a wedge. The Microsoft Store version can't add menu entries.
 
 ## Install
 

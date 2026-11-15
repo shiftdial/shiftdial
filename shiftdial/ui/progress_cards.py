@@ -183,7 +183,7 @@ class Card(QFrame):
         # Own top-level window: the card stack never takes focus, so a child dialog couldn't be typed in.
         dlg = QInputDialog()
         dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
-        dlg.setWindowTitle("Archive password")
+        dlg.setWindowTitle("Password")  # locked archives and PDFs
         dlg.setLabelText(f"Password for {self.job.paths[0].name}:")
         dlg.setTextEchoMode(QLineEdit.EchoMode.Password)
         dlg.show()

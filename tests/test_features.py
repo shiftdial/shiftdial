@@ -176,6 +176,143 @@ def test_resize_to_width_and_height(tmp_path: Path) -> None:
         apply_tool([src], "image:resize", {"mode": "size", "width": 0, "height": 100})
 
 
+def test_pdf_lock_and_unlock(tmp_path: Path) -> None:
+    import pymupdf
+
+    from shiftdial.engines import PasswordRequired
+
+    src = tmp_path / "report.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "secret plan")
+    doc.save(src)
+    [locked] = apply_tool([src], "pdf:lock", {"password": "hunter22"})
+    assert locked.name == "report locked.pdf" and pymupdf.open(locked).needs_pass
+    with pytest.raises(PasswordRequired):
+        apply_tool([locked], "pdf:unlock")
+    with pytest.raises(PasswordRequired, match="Wrong"):
+        apply_tool([locked], "pdf:unlock", {"password": "nope"})
+    [opened] = apply_tool([locked], "pdf:unlock", {"password": "hunter22"})
+    assert opened.name == "report (1).pdf"  # 'locked' dropped; the original report.pdf is still there
+    assert "secret plan" in pymupdf.open(opened)[0].get_text()
+    with pytest.raises(ValueError, match="isn't password protected"):
+        apply_tool([src], "pdf:unlock", {"password": "x"})
+
+
+def test_lock7z_hides_names_and_contents(tmp_path: Path) -> None:
+    import py7zr
+
+    (tmp_path / "plans").mkdir()
+    (tmp_path / "plans" / "a.txt").write_text("top secret")
+    [z] = apply_tool([tmp_path / "plans"], "any:lock7z", {"password": "hunter22"})
+    assert z.name == "plans.7z"
+    with pytest.raises(py7zr.exceptions.PasswordRequired):
+        py7zr.SevenZipFile(z).getnames()  # even the file list needs the password
+    with py7zr.SevenZipFile(z, password="hunter22") as s:
+        assert s.getnames() == ["plans", "plans/a.txt"] or "plans/a.txt" in s.getnames()
+
+
+def test_same_report(tmp_path: Path) -> None:
+    from shiftdial.engines.files import same_report
+
+    a, b, c, d = (tmp_path / n for n in ("a.bin", "b.bin", "c.bin", "d.bin"))
+    a.write_bytes(b"x" * 10)
+    b.write_bytes(b"x" * 10)
+    c.write_bytes(b"y" * 10)  # same size, different bytes
+    d.write_bytes(b"x" * 11)
+    assert same_report([a, b]) == "a.bin and b.bin are identical."
+    assert same_report([a, c]) == "a.bin and c.bin are different."
+    assert same_report([a, b, a]) == "All 3 files are identical."
+    assert same_report([a, c, d]) == "All 3 files are different."
+    assert "a.bin, b.bin" in same_report([a, b, c, d])
+
+
+def test_dial_request_from_the_right_click_menu() -> None:
+    from shiftdial.main import dial_request
+
+    assert dial_request(["--dial", "tools", "C:\\a.png", "C:\\b.png"]) == ("tools", ["C:\\a.png", "C:\\b.png"])
+    assert dial_request(["--dial", "evil", "C:\\a.png"]) is None
+    assert dial_request([]) is None
+
+
+def test_context_menu_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    import winreg
+
+    from shiftdial.utils import context_menu, startup
+
+    root = r"Software\ShiftdialTest\Classes"
+    monkeypatch.setattr(startup, "command", lambda: r'"C:\Apps\Shiftdial\Shiftdial.exe"')
+    try:
+        context_menu.set_enabled(True, root)
+        assert context_menu.is_enabled(root)
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"{root}\*\shell\Shiftdial.Convert\command") as k:
+            assert winreg.QueryValue(k, None) == r'"C:\Apps\Shiftdial\Shiftdial.exe" --dial formats "%1"'
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"{root}\Directory\shell\Shiftdial.Tools") as k:
+            assert winreg.QueryValueEx(k, "MUIVerb")[0] == "Shiftdial tools"
+        context_menu.set_enabled(False, root)
+        assert not context_menu.is_enabled(root)
+    finally:
+        context_menu.set_enabled(False, root)
+        for sub in (rf"{root}\*\shell", rf"{root}\*", rf"{root}\Directory\shell", rf"{root}\Directory", root,
+                    r"Software\ShiftdialTest"):
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+            except OSError:
+                pass
+
+
+def test_custom_dial_key() -> None:
+    from shiftdial.hooks import KEY_SETS, VK_CAPITAL, VK_LCONTROL, VK_LSHIFT, WM_KEYDOWN, WM_LBUTTONDOWN, \
+        WM_MOUSEMOVE, DragDetector
+
+    events: list[str] = []
+    det = DragDetector(events.append, lambda x, y: True)
+    det.format_keys = KEY_SETS["caps"]
+    det.mouse(WM_LBUTTONDOWN, 0, 0)
+    det.mouse(WM_MOUSEMOVE, 50, 0)
+    det.key(WM_KEYDOWN, VK_LSHIFT)
+    assert events == []  # Shift no longer opens the dial: it's back to just 'move'
+    det.key(WM_KEYDOWN, VK_CAPITAL)
+    det.key(WM_KEYDOWN, VK_LCONTROL)
+    assert events == ["formats", "tools"]
+
+
+def test_settings_window_key_and_notify(qtbot) -> None:
+    from shiftdial.ui.settings_window import SettingsWindow
+    from shiftdial.utils import settings
+
+    keys: list[str] = []
+    prefs = {**settings.DEFAULTS, "usage": {}}
+    win = SettingsWindow(prefs, lambda: None, keys.append)
+    qtbot.addWidget(win)
+    win.key.setCurrentIndex(settings.KEYS.index("alt"))
+    assert prefs["key"] == "alt" and keys == ["alt"]
+    win.notify.setChecked(False)
+    assert prefs["notify"] is False
+    assert not win.menu.isEnabled()  # running from source: needs the built exe
+
+
+def test_right_click_dial_picks_by_clicking(qtbot, tmp_path: Path) -> None:
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from shiftdial.wheel import R_IN, R_OUT, Wheel
+
+    src = tmp_path / "a.png"
+    Image.new("RGB", (8, 8)).save(src)
+    wheel = Wheel()
+    qtbot.addWidget(wheel)
+    wheel.pick("formats", [src])
+    centre = QPoint(wheel.width() // 2, wheel.height() // 2)
+    top_wedge = centre - QPoint(0, (R_IN + R_OUT) // 2)  # wedge 0 sits at 12 o'clock
+    with qtbot.waitSignal(wheel.chosen) as sig:
+        QTest.mouseClick(wheel, Qt.MouseButton.LeftButton, pos=top_wedge)
+    assert sig.args == [[src], wheel.items[0]] or sig.args[0] == [src]
+    wheel.pick("formats", [src])
+    with qtbot.assertNotEmitted(wheel.chosen):
+        QTest.mouseClick(wheel, Qt.MouseButton.LeftButton, pos=centre)  # the hub: just closes
+    assert not wheel._picking
+
+
 def test_get_text_with_no_text_fails_and_writes_nothing(tmp_path: Path) -> None:
     src = tmp_path / "blank.png"
     Image.new("RGB", (300, 200), "white").save(src)

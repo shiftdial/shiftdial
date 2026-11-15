@@ -1,5 +1,6 @@
 """%LOCALAPPDATA%\\Shiftdial\\settings.json:
-{"theme": "system" | "light" | "dark", "welcomed": bool, "subfolder": bool, "usage": {"webp": 3, ...}}."""
+{"theme": "system" | "light" | "dark", "key": "shift" | "caps" | "alt", "welcomed": bool, "subfolder": bool,
+ "notify": bool, "usage": {"webp": 3, ...}}."""
 from __future__ import annotations
 
 import json
@@ -10,7 +11,9 @@ from typing import Any
 from shiftdial.utils.paths import data_dir
 
 THEMES = ("system", "light", "dark")
-DEFAULTS: dict[str, Any] = {"theme": "system", "welcomed": False, "subfolder": False, "usage": {}}
+KEYS = ("shift", "caps", "alt")  # which key opens the dial during a drag (hooks.KEY_SETS)
+DEFAULTS: dict[str, Any] = {"theme": "system", "key": "shift", "welcomed": False, "subfolder": False,
+                            "notify": True, "usage": {}}
 
 
 def path() -> Path:
@@ -28,7 +31,9 @@ def load(file: Path | None = None) -> dict[str, Any]:
     s = {**DEFAULTS, "usage": {}}
     if raw.get("theme") in THEMES:
         s["theme"] = raw["theme"]
-    for key in ("welcomed", "subfolder"):
+    if raw.get("key") in KEYS:
+        s["key"] = raw["key"]
+    for key in ("welcomed", "subfolder", "notify"):
         if isinstance(raw.get(key), bool):
             s[key] = raw[key]
     usage = raw.get("usage")

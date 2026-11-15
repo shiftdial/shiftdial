@@ -110,6 +110,8 @@ TOOLS: list[Tool] = [
     Tool("pdf:rotate", "Rotate", True),
     Tool("pdf:delete", "Delete pages", True),
     Tool("pdf:compress", "Compress", False),
+    Tool("pdf:lock", "Lock", True),
+    Tool("pdf:unlock", "Unlock", False),  # asks for the password on its card, like a locked archive
     Tool("archive:extract", "Extract", False),
     Tool("folder:zip", "Zip", False),
     Tool("folder:7z", "7Z", False),
@@ -117,6 +119,8 @@ TOOLS: list[Tool] = [
     Tool("any:rename", "Rename", True),  # any file or folder
     Tool("file:hash", "SHA-256", False),  # any file, no folders
     Tool("file:locks", "In use by", False),
+    Tool("file:same", "Same?", False, min_files=2),
+    Tool("any:lock7z", "Lock 7Z", True),  # files or folders into a password-protected 7Z
 ]
 TOOL_BY_ID = {t.id: t for t in TOOLS}
 
