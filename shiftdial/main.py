@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from shiftdial import __version__, paste
 from shiftdial.engines.files import locks_report, same_report
-from shiftdial.hooks import DragHooks
+from shiftdial.hooks import DragHooks, keys_label
 from shiftdial.jobs import JobQueue
 from shiftdial.registry import TOOL_BY_ID
 from shiftdial.ui import theme
@@ -33,7 +33,7 @@ from shiftdial.wheel import Wheel
 log = logging.getLogger("shiftdial")
 DISMISS_AFTER_RELEASE_MS = 400  # the OLE drop reaches the wheel shortly *after* the button-up
 REPO = "https://github.com/shiftdial/shiftdial"
-HOW_TO = ("Start dragging files in Explorer, then press Shift for formats, or Ctrl+Shift for tools like "
+HOW_TO = ("Start dragging files in Explorer, then press {dial} for formats, or {tools} for tools like "
           "Remove bg, Get text and Rename. Drop on a wedge.")
 ABOUT = (f"Shiftdial {__version__}\n\nConvert files by pressing Shift while you drag them.\n\n"
          "Copyright (c) 2026 ruchitdonga. Free software under the GNU AGPL v3, with no warranty.\n"
@@ -181,7 +181,7 @@ def main() -> int:
             QTimer.singleShot(DISMISS_AFTER_RELEASE_MS, wheel, wheel.end_drag)
 
     hooks = DragHooks()
-    hooks.set_key(prefs["key"])
+    hooks.set_keys(prefs["dial_keys"], prefs["tools_keys"])
     hooks.event.connect(on_drag_event)
     hooks.start()
 
@@ -266,7 +266,7 @@ def main() -> int:
 
     def open_settings() -> None:
         if not settings_window:
-            win = SettingsWindow(prefs, save_prefs, hooks.set_key)
+            win = SettingsWindow(prefs, save_prefs, hooks.set_keys)
             win.destroyed.connect(settings_window.clear)
             settings_window.append(win)
         win = settings_window[0]
@@ -278,7 +278,8 @@ def main() -> int:
     menu.addSeparator()
 
     def show_tip() -> None:
-        tray.showMessage("How to use Shiftdial", HOW_TO, QSystemTrayIcon.MessageIcon.Information, 12000)
+        text = HOW_TO.format(dial=keys_label(prefs["dial_keys"]), tools=keys_label(prefs["tools_keys"]))
+        tray.showMessage("How to use Shiftdial", text, QSystemTrayIcon.MessageIcon.Information, 12000)
 
     menu.addAction(QAction("How to use", menu, triggered=show_tip))
     menu.addAction(QAction("Send feedback", menu, triggered=lambda: os.startfile(f"{REPO}/issues/new")))

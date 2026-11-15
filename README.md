@@ -70,7 +70,8 @@ let you delete it, **Same?**, which tells you whether two or more files are byte
 PNG or TXT in the front-most Explorer folder.
 
 The formats you use most move to the top of the dial. **Settings** (right-click the tray icon) holds the
-theme, the dial key (Shift, Caps Lock or Alt), Start with Windows, a notification when a long job
+theme, the keys for each dial (any key or combo you press: Shift and Ctrl + Shift by default), Start with
+Windows, a notification when a long job
 finishes, an option to send every result into a `Converted` subfolder instead of beside the original, and
 a reset for the dial order. The zip version can also add **Convert with Shiftdial** and **Shiftdial tools**
 to Explorer's right-click menu (under *Show more options* on Windows 11); the dial then opens at the cursor

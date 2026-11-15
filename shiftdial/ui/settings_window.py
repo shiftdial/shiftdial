@@ -4,24 +4,76 @@ from __future__ import annotations
 import os
 from typing import Any, Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFocusEvent, QKeyEvent
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QPushButton
 
 from shiftdial import __version__
+from shiftdial.hooks import keys_label, normal
 from shiftdial.ui import theme
 from shiftdial.ui.widgets import Panel
 from shiftdial.utils import context_menu, paths, settings, startup
 from shiftdial.utils.paths import data_dir
 
 
+class KeyButton(QPushButton):
+    """Shows a key combo; click it, press any key or combo, let go, and it's recorded. Esc cancels."""
+
+    recorded = Signal(list)
+
+    def __init__(self, keys: list[int]) -> None:
+        super().__init__(keys_label(keys))
+        self.keys = list(keys)
+        self._held: set[int] = set()
+        self._combo: list[int] = []
+        self._recording = False
+        self.clicked.connect(self._start)
+
+    def _start(self) -> None:
+        self._recording, self._held, self._combo = True, set(), []
+        self.setText("Press a key or combo…")
+        self.grabKeyboard()
+
+    def _finish(self, keys: list[int] | None) -> None:
+        self._recording = False
+        self.releaseKeyboard()
+        if keys:
+            self.keys = keys
+            self.recorded.emit(keys)
+        self.setText(keys_label(self.keys))
+
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+        if not self._recording:
+            return super().keyPressEvent(e)
+        vk = normal(e.nativeVirtualKey())
+        if vk == 0x1B:  # Esc: keep the old combo
+            return self._finish(None)
+        if not e.isAutoRepeat() and vk and vk not in self._combo and len(self._combo) < 3:
+            self._combo.append(vk)
+        self._held.add(vk)
+        self.setText(keys_label(self._combo) + " …")
+
+    def keyReleaseEvent(self, e: QKeyEvent) -> None:
+        if not self._recording or e.isAutoRepeat():
+            return super().keyReleaseEvent(e)
+        self._held.discard(normal(e.nativeVirtualKey()))
+        if not self._held and self._combo:  # everything let go: that's the combo
+            self._finish(self._combo)
+
+    def focusOutEvent(self, e: QFocusEvent) -> None:
+        if self._recording:
+            self._finish(None)
+        super().focusOutEvent(e)
+
+
 class SettingsWindow(Panel):
     """Each control applies and saves as soon as it changes; there is no OK button to forget."""
 
     def __init__(self, prefs: dict[str, Any], save: Callable[[], None],
-                 set_key: Callable[[str], None] = lambda _: None) -> None:
+                 set_keys: Callable[[list[int], list[int]], None] = lambda dial, tools: None) -> None:
         super().__init__("Shiftdial · Settings")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.prefs, self.save, self.set_key = prefs, save, set_key
+        self.prefs, self.save, self.set_keys = prefs, save, set_keys
         form = QFormLayout()
         form.setHorizontalSpacing(14)
         form.setVerticalSpacing(10)
@@ -33,12 +85,16 @@ class SettingsWindow(Panel):
         self.theme.currentIndexChanged.connect(self._theme)
         form.addRow("Theme", self.theme)
 
-        self.key = QComboBox()
-        for name, text in zip(settings.KEYS, ("Shift", "Caps Lock", "Alt")):
-            self.key.addItem(f"{text}  (tools: {text} + Ctrl)", name)
-        self.key.setCurrentIndex(settings.KEYS.index(prefs["key"]))
-        self.key.currentIndexChanged.connect(self._key)
-        form.addRow("Dial key", self.key)
+        self.dial_key = KeyButton(prefs["dial_keys"])
+        self.dial_key.recorded.connect(lambda keys: self._keys("dial_keys", keys))
+        form.addRow("Formats key", self.dial_key)
+        self.tools_key = KeyButton(prefs["tools_keys"])
+        self.tools_key.recorded.connect(lambda keys: self._keys("tools_keys", keys))
+        form.addRow("Tools key", self.tools_key)
+        hint = QLabel("Click, then press any key or combo while no drag is happening. F8 and F9 always work too.")
+        hint.setProperty("role", "sub")
+        hint.setWordWrap(True)
+        form.addRow("", hint)
 
         self.notify = QCheckBox("Notify me when a long job finishes")
         self.notify.setChecked(prefs["notify"])
@@ -96,10 +152,20 @@ class SettingsWindow(Panel):
         self.save()
         theme.set_mode(self.prefs["theme"])
 
-    def _key(self) -> None:
-        self.prefs["key"] = self.key.currentData()
+    def _keys(self, which: str, keys: list[int]) -> None:
+        other = self.prefs["tools_keys" if which == "dial_keys" else "dial_keys"]
+        button = self.dial_key if which == "dial_keys" else self.tools_key
+        if not settings.valid_keys(keys) or set(keys) == set(other):
+            self.note.setText("That combo can't be used" if not settings.valid_keys(keys) else
+                              "Formats and tools need different keys.")
+            button.keys = list(self.prefs[which])
+            button.setText(keys_label(button.keys))
+            return
+        self.prefs[which] = keys
         self.save()
-        self.set_key(self.prefs["key"])
+        self.set_keys(self.prefs["dial_keys"], self.prefs["tools_keys"])
+        self.note.setText(f"Formats: {keys_label(self.prefs['dial_keys'])}  ·  "
+                          f"Tools: {keys_label(self.prefs['tools_keys'])}")
 
     def _notify(self, on: bool) -> None:
         self.prefs["notify"] = on

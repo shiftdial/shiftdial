@@ -260,32 +260,54 @@ def test_context_menu_entries(monkeypatch: pytest.MonkeyPatch) -> None:
                 pass
 
 
-def test_custom_dial_key() -> None:
-    from shiftdial.hooks import KEY_SETS, VK_CAPITAL, VK_LCONTROL, VK_LSHIFT, WM_KEYDOWN, WM_LBUTTONDOWN, \
-        WM_MOUSEMOVE, DragDetector
+def test_separate_keys_for_each_dial() -> None:
+    from shiftdial.hooks import VK_CAPITAL, VK_LCONTROL, VK_LSHIFT, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEMOVE, \
+        DragDetector, keys_label
 
     events: list[str] = []
     det = DragDetector(events.append, lambda x, y: True)
-    det.format_keys = KEY_SETS["caps"]
+    det.dial_keys, det.tools_keys = frozenset({VK_CAPITAL}), frozenset({0x11, 0x51})  # Caps Lock; Ctrl + Q
     det.mouse(WM_LBUTTONDOWN, 0, 0)
     det.mouse(WM_MOUSEMOVE, 50, 0)
     det.key(WM_KEYDOWN, VK_LSHIFT)
-    assert events == []  # Shift no longer opens the dial: it's back to just 'move'
+    assert events == []  # Shift no longer opens anything: it's back to just 'move'
     det.key(WM_KEYDOWN, VK_CAPITAL)
-    det.key(WM_KEYDOWN, VK_LCONTROL)
-    assert events == ["formats", "tools"]
+    assert events == ["formats"]
+    det.key(WM_KEYDOWN, VK_LCONTROL)  # left Ctrl counts as Ctrl
+    det.key(WM_KEYDOWN, 0x51)
+    assert events[-1] == "tools"
+    assert keys_label([0x10, 0x11]) == "Ctrl + Shift"
+    assert keys_label([0x51, 0x11]) == "Ctrl + Q"
+    assert keys_label([VK_CAPITAL]) == "Caps Lock"
 
 
-def test_settings_window_key_and_notify(qtbot) -> None:
+def test_settings_window_records_keys_and_notify(qtbot) -> None:
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
     from shiftdial.ui.settings_window import SettingsWindow
     from shiftdial.utils import settings
 
-    keys: list[str] = []
-    prefs = {**settings.DEFAULTS, "usage": {}}
-    win = SettingsWindow(prefs, lambda: None, keys.append)
+    applied: list[tuple] = []
+    prefs = settings.load(Path("missing-settings.json"))
+    win = SettingsWindow(prefs, lambda: None, lambda d, t: applied.append((d, t)))
     qtbot.addWidget(win)
-    win.key.setCurrentIndex(settings.KEYS.index("alt"))
-    assert prefs["key"] == "alt" and keys == ["alt"]
+
+    def key(kind: QEvent.Type, qt_key: Qt.Key, vk: int) -> None:
+        QApplication.sendEvent(win.tools_key, QKeyEvent(kind, qt_key, Qt.KeyboardModifier.NoModifier, 0, vk, 0))
+
+    win.tools_key.click()  # start recording, then press Ctrl + Q and let go
+    key(QEvent.Type.KeyPress, Qt.Key.Key_Control, 0xA2)
+    key(QEvent.Type.KeyPress, Qt.Key.Key_Q, 0x51)
+    key(QEvent.Type.KeyRelease, Qt.Key.Key_Q, 0x51)
+    key(QEvent.Type.KeyRelease, Qt.Key.Key_Control, 0xA2)
+    assert prefs["tools_keys"] == [0x11, 0x51] and applied == [([0x10], [0x11, 0x51])]
+    assert win.tools_key.text() == "Ctrl + Q"
+
+    win._keys("dial_keys", [0x11, 0x51])  # same as tools: refused, nothing changes
+    assert prefs["dial_keys"] == [0x10] and "different" in win.note.text()
+
     win.notify.setChecked(False)
     assert prefs["notify"] is False
     assert not win.menu.isEnabled()  # running from source: needs the built exe

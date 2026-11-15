@@ -16,12 +16,14 @@ TEST_KEY = r"Software\ShiftdialTest"
 def test_settings_roundtrip_and_bad_files(tmp_path: Path) -> None:
     f = tmp_path / "settings.json"
     assert settings.load(f) == settings.DEFAULTS  # missing
-    good = {"theme": "dark", "key": "caps", "welcomed": True, "subfolder": True, "notify": False,
-            "usage": {"webp": 3}}
+    good = {"theme": "dark", "dial_keys": [0x14], "tools_keys": [0x11, 0x51], "welcomed": True,
+            "subfolder": True, "notify": False, "usage": {"webp": 3}}
     settings.save(good, f)
     assert settings.load(f) == good
     for bad in ("{not json", '{"theme": "neon"}', '["dark"]', '{"theme": 5}',
-                '{"welcomed": "yes", "subfolder": 1, "usage": [1]}'):
+                '{"welcomed": "yes", "subfolder": 1, "usage": [1]}',
+                '{"dial_keys": [27]}', '{"dial_keys": [1]}', '{"tools_keys": []}', '{"dial_keys": [65, 65]}',
+                '{"dial_keys": [17, 16], "tools_keys": [16, 17]}'):  # Esc, mouse, empty, repeat, same combo
         f.write_text(bad, encoding="utf-8")
         assert settings.load(f) == settings.DEFAULTS
     f.write_text('{"usage": {"jpg": 2, "png": -1, "gif": "x", "webp": true}}', encoding="utf-8")

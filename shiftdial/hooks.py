@@ -18,12 +18,36 @@ WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP = 0x0200, 0x0201, 0x0202
 
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_CAPITAL, VK_ESCAPE, VK_F8, VK_F9 = 0x10, 0x11, 0x12, 0x14, 0x1B, 0x77, 0x78
 VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU = 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5
-VK_LBUTTON, VK_RBUTTON = 0x01, 0x02
-SHIFTS = {VK_SHIFT, VK_LSHIFT, VK_RSHIFT}
-CTRLS = {VK_CONTROL, VK_LCONTROL, VK_RCONTROL}
-KEY_SETS = {"shift": SHIFTS, "caps": {VK_CAPITAL}, "alt": {VK_MENU, VK_LMENU, VK_RMENU}}  # Settings › Dial key
-WATCHED = (VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU, VK_CAPITAL, VK_F8, VK_F9,
-           VK_ESCAPE)
+VK_LBUTTON, VK_RBUTTON, VK_MBUTTON = 0x01, 0x02, 0x04
+_GENERIC = {VK_LSHIFT: VK_SHIFT, VK_RSHIFT: VK_SHIFT, VK_LCONTROL: VK_CONTROL, VK_RCONTROL: VK_CONTROL,
+            VK_LMENU: VK_MENU, VK_RMENU: VK_MENU}
+DIAL_KEYS, TOOLS_KEYS = (VK_SHIFT,), (VK_CONTROL, VK_SHIFT)  # defaults; Settings can record any keys
+FIXED = (VK_F8, VK_F9, VK_ESCAPE)  # always watched: F8 formats, F9 tools, Esc closes
+NOT_ALLOWED = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_ESCAPE}  # mouse buttons drag; Esc cancels
+_NAMES = {VK_SHIFT: "Shift", VK_CONTROL: "Ctrl", VK_MENU: "Alt", VK_CAPITAL: "Caps Lock", 0x09: "Tab", 0x20: "Space",
+          0x5B: "Win", 0x5C: "Win", 0x08: "Backspace", 0x0D: "Enter", 0x2D: "Insert", 0x2E: "Delete"}
+_MODIFIER_ORDER = (VK_CONTROL, VK_MENU, VK_SHIFT)
+
+
+def normal(vk: int) -> int:
+    """Left/right Shift, Ctrl and Alt count as the same key."""
+    return _GENERIC.get(vk, vk)
+
+
+def key_name(vk: int) -> str:
+    if vk in _NAMES:
+        return _NAMES[vk]
+    buf = ctypes.create_unicode_buffer(32)
+    scan = ctypes.windll.user32.MapVirtualKeyW(vk, 0)  # MAPVK_VK_TO_VSC
+    if scan and ctypes.windll.user32.GetKeyNameTextW(scan << 16, buf, len(buf)):
+        return buf.value.title() if len(buf.value) > 1 else buf.value
+    return f"Key {vk}"
+
+
+def keys_label(keys: tuple[int, ...] | list[int]) -> str:
+    """'Ctrl + Shift', modifiers first, the way Windows writes shortcuts."""
+    order = sorted(keys, key=lambda k: (_MODIFIER_ORDER.index(k) if k in _MODIFIER_ORDER else 9, k))
+    return " + ".join(key_name(k) for k in order)
 
 DRAG_THRESHOLD_PX = 8
 POLL_S = 0.008
@@ -39,7 +63,8 @@ class DragDetector:
         self._dragging = False
         self._source_ok = False
         self._keys: set[int] = set()
-        self.format_keys: set[int] = SHIFTS  # the key that opens the formats dial; + Ctrl opens tools
+        self.dial_keys: frozenset[int] = frozenset(DIAL_KEYS)  # all held → formats dial
+        self.tools_keys: frozenset[int] = frozenset(TOOLS_KEYS)  # all held → tools dial
 
     def mouse(self, msg: int, x: int, y: int) -> None:
         if msg == WM_LBUTTONDOWN:
@@ -55,13 +80,14 @@ class DragDetector:
             self._down_at, self._dragging = None, False
 
     def key(self, msg: int, vk: int) -> None:
+        vk = normal(vk)
         if msg in (WM_KEYDOWN, WM_SYSKEYDOWN):
             fresh = vk not in self._keys  # held keys auto-repeat KEYDOWN; act only on the first
             self._keys.add(vk)
             if fresh and self._dragging and self._source_ok:
                 if vk == VK_ESCAPE:
                     self._emit("dismiss")
-                elif vk in self.format_keys or vk in CTRLS or vk in (VK_F8, VK_F9):
+                elif vk in self.dial_keys | self.tools_keys or vk in (VK_F8, VK_F9):
                     self._trigger()
         elif msg in (WM_KEYUP, WM_SYSKEYUP):
             self._keys.discard(vk)  # releasing Shift leaves the wheel up
@@ -69,10 +95,14 @@ class DragDetector:
     def _trigger(self) -> None:
         if not (self._dragging and self._source_ok):
             return
-        key, ctrl = bool(self._keys & self.format_keys), bool(self._keys & CTRLS)
-        if VK_F9 in self._keys or (key and ctrl):
+        # When both combos are held (Shift inside Ctrl + Shift), the one with more keys wins.
+        held = [(len(keys), mode) for keys, mode in ((self.tools_keys, "tools"), (self.dial_keys, "formats"))
+                if keys <= self._keys]
+        if VK_F9 in self._keys:
             self._emit("tools")
-        elif VK_F8 in self._keys or key:
+        elif held:
+            self._emit(max(held)[1])
+        elif VK_F8 in self._keys:
             self._emit("formats")
 
 
@@ -156,10 +186,12 @@ class DragHooks(QObject):
         self._detector = DragDetector(self.event.emit, is_explorer_at)
         self._poller = InputPoller(self._detector)
         self._stop = threading.Event()
+        self._watched = (*DIAL_KEYS, *TOOLS_KEYS, *FIXED)  # GetAsyncKeyState on Shift/Ctrl/Alt covers both sides
 
-    def set_key(self, name: str) -> None:
-        """'shift', 'caps' or 'alt' (KEY_SETS). One attribute swap, so the polling thread needs no lock."""
-        self._detector.format_keys = KEY_SETS[name]
+    def set_keys(self, dial: list[int], tools: list[int]) -> None:
+        """The key combos for each dial. Attribute swaps only, so the polling thread needs no lock."""
+        self._detector.dial_keys, self._detector.tools_keys = frozenset(dial), frozenset(tools)
+        self._watched = tuple({*dial, *tools, *FIXED})
 
     def start(self) -> None:
         threading.Thread(target=self._run, name="drag-watch", daemon=True).start()
@@ -178,7 +210,7 @@ class DragHooks(QObject):
                 if not down and not self._poller.pressed:
                     continue
                 user32.GetCursorPos(ctypes.byref(pt))
-                keys = {vk for vk in WATCHED if _is_down(vk)}
+                keys = {vk for vk in self._watched if _is_down(vk)}
                 self._poller.feed(down, pt.x, pt.y, keys)
             except Exception:  # noqa: BLE001 - keep watching; one bad tick mustn't stop detection
                 log.exception("drag watcher")
