@@ -92,6 +92,7 @@ TOOLS: list[Tool] = [
     Tool("image:strip_exif", "Strip EXIF", False),
     Tool("image:watermark", "Watermark", True),
     Tool("image:text", "Get text", False),
+    Tool("image:nobg", "Remove bg", False),
     Tool("video:compress", "Compress", True),
     Tool("video:trim", "Trim", True),
     Tool("video:speed", "Speed", True),

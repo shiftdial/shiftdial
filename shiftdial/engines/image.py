@@ -1,6 +1,8 @@
 """Image conversions and tools via Pillow (+ pillow-heif for HEIC input; AVIF is built into Pillow 11.2+)."""
 from __future__ import annotations
 
+import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -8,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from shiftdial.engines import JobContext
 from shiftdial.registry import CAMERA_RAW
-from shiftdial.utils.paths import Output
+from shiftdial.utils.paths import Output, split_ext
 
 try:
     import pillow_heif
@@ -260,6 +262,61 @@ def tool_watermark(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> lis
         raise ValueError("Watermark text is empty")
     size, pos, opacity = float(p.get("size", 5)), p.get("position", "bottom-right"), float(p.get("opacity", 60))
     return each(paths, ctx, "Watermark", lambda im: watermark(im, text, size, pos, opacity))
+
+
+MODEL = "isnet-general-use.onnx"  # IS-Net (DIS), Apache-2.0; build.ps1 downloads and verifies it
+_session: Any = None
+_session_lock = threading.Lock()
+
+
+def model_path() -> Path:
+    """models/ beside Shiftdial.exe in the built app, or at the repo root when run from source."""
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
+    return base / "models" / MODEL
+
+
+def _matting() -> Any:
+    """The background-removal model, loaded once (about a second) and shared by jobs."""
+    global _session
+    with _session_lock:
+        if _session is None:
+            path = model_path()
+            if not path.exists():
+                raise ValueError(f"Remove background needs {MODEL}. Run build.ps1 once to download it.")
+            import onnxruntime
+
+            _session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        return _session
+
+
+def cutout(im: Image.Image) -> Image.Image:
+    """``im`` with a transparent background: the model predicts a 0..1 foreground mask at 1024 px."""
+    import numpy as np
+
+    session = _matting()
+    rgb = im.convert("RGB")
+    x = np.asarray(rgb.resize((1024, 1024), Image.LANCZOS), dtype=np.float32) / 255.0
+    x = (x - 0.5).transpose(2, 0, 1)[None]  # IS-Net's normalisation: mean 0.5, std 1
+    pred = session.run(None, {session.get_inputs()[0].name: x})[0][0, 0]
+    pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-8)
+    mask = Image.fromarray((pred * 255).astype(np.uint8)).resize(rgb.size, Image.LANCZOS)
+    out = rgb.convert("RGBA")
+    out.putalpha(mask)
+    return out
+
+
+def tool_nobg(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
+    """Each image as '<name> cutout.png' with the background made transparent."""
+    outputs: list[Path] = []
+    for i, src in enumerate(paths):
+        ctx.check()
+        ctx.progress(i / len(paths), f"Removing background from {src.name}")
+        result = cutout(load(src))
+        with Output(src.parent, f"{split_ext(src.name)[0]} cutout", "png") as out:
+            result.save(out.tmp, "PNG", optimize=True)
+        outputs.append(out.final)
+    ctx.progress(1.0, "Done")
+    return outputs
 
 
 def ocr(im: Image.Image) -> str:

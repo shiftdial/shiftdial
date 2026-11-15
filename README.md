@@ -55,7 +55,9 @@ failed job leaves nothing behind.
 \* Uses the Microsoft Office you already have, or LibreOffice.
 
 Tools: resize, compress, crop, rotate, grayscale, watermark, strip EXIF and **get text** (copies the
-words out of a screenshot or photo into a .txt, using Windows' built-in text recognition) for images;
+words out of a screenshot or photo into a .txt, using Windows' built-in text recognition) and **remove
+background** (a transparent cutout PNG, made on your PC by the bundled IS-Net model; best on photos with a
+clear subject) for images;
 trim, crop, resize, speed, mute, compress to a target size, grab a frame and pull out subtitles for
 video; trim, normalize and mono/stereo for audio; merge, split, rotate, delete pages and compress for PDF.
 Compress and Resize have one-click sizes for Discord, WhatsApp, email and Instagram.
@@ -125,4 +127,4 @@ The name "Shiftdial", the dial logo and the app icon are not covered by the lice
 its own name and icon; see [TRADEMARKS.md](TRADEMARKS.md).
 
 Version 1.0 was released under the MIT licence; later versions are AGPL. The app bundles ffmpeg (GPL) and
-PyMuPDF (AGPL).
+PyMuPDF (AGPL), plus the IS-Net background-removal model (Apache-2.0) and ONNX Runtime (MIT).

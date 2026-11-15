@@ -31,7 +31,8 @@ HOW_TO = ("Start dragging files in Explorer, then press Shift for formats, or Ct
           "Drop on a wedge to convert.")
 ABOUT = (f"Shiftdial {__version__}\n\nConvert files by pressing Shift while you drag them.\n\n"
          "Copyright (c) 2026 ruchitdonga. Free software under the GNU AGPL v3, with no warranty.\n"
-         f"Source code: {REPO}\n\nBundles ffmpeg (GPL) and PyMuPDF (AGPL).")
+         f"Source code: {REPO}\n\nBundles ffmpeg (GPL), PyMuPDF (AGPL), ONNX Runtime (MIT) and the IS-Net "
+         "background-removal model (Apache-2.0).")
 
 def make_icon(size: int = 64) -> QIcon:
     """The dial in miniature, drawn in code so there is no asset to ship (build.ps1 renders the .ico)."""

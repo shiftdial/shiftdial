@@ -25,5 +25,19 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 $ffmpeg = & $py -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
 Copy-Item $ffmpeg dist\Shiftdial\ffmpeg.exe -Force
 
+# Remove background: the IS-Net model (Apache-2.0). Downloaded once into models\ (gitignored), checked
+# against a pinned hash, bundled into the app. The app itself never downloads anything.
+$model = "models\isnet-general-use.onnx"
+$modelSha = "60920E99C45464F2BA57BEE2AD08C919A52BBF852739E96947FBB4358C0D964A"
+if (-not (Test-Path $model)) {
+    New-Item -ItemType Directory -Force models | Out-Null
+    Invoke-WebRequest "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx" -OutFile "$model.part" -UseBasicParsing
+    if ((Get-FileHash "$model.part" -Algorithm SHA256).Hash -ne $modelSha) { Remove-Item "$model.part"; throw "The downloaded model failed its SHA-256 check" }
+    Move-Item "$model.part" $model
+}
+if ((Get-FileHash $model -Algorithm SHA256).Hash -ne $modelSha) { throw "$model doesn't match its pinned SHA-256; delete it and build again" }
+New-Item -ItemType Directory -Force dist\Shiftdial\models | Out-Null
+Copy-Item $model dist\Shiftdial\models\ -Force
+
 $size = "{0:N0} MB" -f ((Get-ChildItem dist\Shiftdial -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 Write-Host "Built dist\Shiftdial\Shiftdial.exe ($size)"

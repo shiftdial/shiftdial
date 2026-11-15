@@ -126,6 +126,23 @@ def test_save_clipboard_image_text_and_nothing(qtbot, tmp_path: Path) -> None:
     assert save_clipboard(tmp_path) is None
 
 
+def test_remove_background_cuts_out_the_subject(tmp_path: Path) -> None:
+    from shiftdial.engines.image import model_path
+
+    if not model_path().exists():
+        pytest.skip("model not downloaded; build.ps1 fetches it")
+    src = tmp_path / "ball.jpg"
+    im = Image.new("RGB", (800, 600), (235, 235, 230))
+    ImageDraw.Draw(im).ellipse((250, 150, 550, 450), fill=(200, 40, 40))
+    im.save(src)
+    [out] = apply_tool([src], "image:nobg")
+    assert out.name == "ball cutout.png"
+    cut = Image.open(out)
+    assert cut.mode == "RGBA" and cut.size == (800, 600)
+    assert cut.getpixel((400, 300))[3] > 200  # the ball stays
+    assert cut.getpixel((20, 20))[3] < 30  # the background goes
+
+
 def test_get_text_with_no_text_fails_and_writes_nothing(tmp_path: Path) -> None:
     src = tmp_path / "blank.png"
     Image.new("RGB", (300, 200), "white").save(src)

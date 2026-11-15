@@ -12,6 +12,7 @@ winrt-Windows.Foundation.Collections==3.2.1  # Get text (Windows OCR)
 winrt-Windows.Media.Ocr==3.2.1
 winrt-Windows.Graphics.Imaging==3.2.1
 winrt-Windows.Storage.Streams==3.2.1
+onnxruntime==1.32.0  # Remove background (the model is fetched by build.ps1)
 PyYAML==6.0.3  # data: YAML
 tomli_w==1.2.0  # data: writing TOML (reading is in the standard library)
 xmltodict==1.0.4  # data: XML
