@@ -19,7 +19,8 @@ from shiftdial.jobs import Job
 from shiftdial.registry import by_use, formats_for, kind_of_all, label_for, tools_for
 from shiftdial.ui import theme
 
-R_OUT = 150
+R_OUT = 150  # ring radius up to 11 wedges; longer lists get a bigger ring, see ring_radius()
+R_MAX = 230
 R_IN = 52
 MARGIN = 6
 TICKS = 72
@@ -27,9 +28,14 @@ KIND_NAMES = {"image": "images", "video": "video", "audio": "audio", "pdf": "pdf
               "folder": "folders", "slides": "slides"}
 
 
-def wedge_at(dx: float, dy: float, n: int) -> int:
+def ring_radius(n: int) -> int:
+    """Outer radius that leaves every label about 58 px of arc; text and the hub keep their size."""
+    return min(R_MAX, max(R_OUT, round(18.5 * n - 50)))
+
+
+def wedge_at(dx: float, dy: float, n: int, r_out: float = R_OUT) -> int:
     """Index of the wedge at offset (dx, dy) from the center, or -1."""
-    if n == 0 or not R_IN <= math.hypot(dx, dy) <= R_OUT:
+    if n == 0 or not R_IN <= math.hypot(dx, dy) <= r_out:
         return -1
     span = 360 / n
     clockwise_from_top = (90 - math.degrees(math.atan2(-dy, dx))) % 360
@@ -55,7 +61,7 @@ class Wheel(QWidget):
                          | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
-        side = 2 * (R_OUT + MARGIN)
+        side = 2 * (R_MAX + MARGIN)  # room for the biggest ring; the rest is transparent
         self.setFixedSize(side, side)
         self.paths: list[Path] = []
         self.items: list[str] = []
@@ -96,6 +102,10 @@ class Wheel(QWidget):
         a.setStartValue(start)
         a.setEndValue(end)
         a.start()
+
+    @property
+    def r_out(self) -> int:
+        return ring_radius(len(self.items))
 
     def _items_for(self, paths: list[Path]) -> list[str]:
         return by_use((tools_for if self.mode == "tools" else formats_for)(paths), self.usage) if paths else []
@@ -254,7 +264,7 @@ class Wheel(QWidget):
         self.hover = i
 
     def _index(self, p: QPointF) -> int:
-        return wedge_at(p.x() - self.width() / 2, p.y() - self.height() / 2, len(self.items))
+        return wedge_at(p.x() - self.width() / 2, p.y() - self.height() / 2, len(self.items), self.r_out)
 
     @staticmethod
     def _accept_as_copy(e: QDragMoveEvent) -> bool:
@@ -320,6 +330,7 @@ class Wheel(QWidget):
     def _paint_progress(self, job: Job) -> None:
         """Readout: the scale fills clockwise, a needle sweeps, the grown knob shows the percent."""
         pal = theme.palette()
+        ro = self.r_out
         prog = _clamp(self._val(self._progress, 0.0))
         morph = self._val(self._morph, 1.0)
         fade = self._val(self._flash, 0.0) if self._closing else 0.0
@@ -330,7 +341,7 @@ class Wheel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setOpacity(1 - fade)
         c = QPointF(self.width() / 2, self.height() / 2)
-        disc = QRectF(c.x() - R_OUT + 0.5, c.y() - R_OUT + 0.5, 2 * R_OUT - 1, 2 * R_OUT - 1)
+        disc = QRectF(c.x() - ro + 0.5, c.y() - ro + 0.5, 2 * ro - 1, 2 * ro - 1)
         p.setPen(QPen(pal.line, 1))
         p.setBrush(theme.alpha(pal.surface, 0.97))
         p.drawEllipse(disc)
@@ -343,8 +354,8 @@ class Wheel(QWidget):
             lit = (k * 5 - start) % 360 < span
             colour = ink if lit else (pal.muted if major else theme.alpha(pal.muted, 0.45))
             p.setPen(QPen(colour, 1.6 if lit else 1))
-            p.drawLine(QLineF(_polar(c, R_OUT - 4, deg), _polar(c, R_OUT - (12 if major else 8), deg)))
-        r = R_OUT - 15
+            p.drawLine(QLineF(_polar(c, ro - 4, deg), _polar(c, ro - (12 if major else 8), deg)))
+        r = ro - 15
         p.setPen(QPen(ink, 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawArc(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r), round((90 - start) * 16), round(-span * 16))
@@ -399,6 +410,7 @@ class Wheel(QWidget):
             self._paint_progress(self._job)
             return
         pal = theme.palette()
+        ro = self.r_out
         kind = kind_of_all(self.paths) if self.paths else None
         t = self._val(self._open, 1.0)
         flash = self._val(self._flash, 0.0) if self._closing else 0.0
@@ -419,7 +431,7 @@ class Wheel(QWidget):
         p.translate(-c)
 
         # Body. Never fully transparent, or drops would fall through to the window below.
-        disc = QRectF(c.x() - R_OUT + 0.5, c.y() - R_OUT + 0.5, 2 * R_OUT - 1, 2 * R_OUT - 1)
+        disc = QRectF(c.x() - ro + 0.5, c.y() - ro + 0.5, 2 * ro - 1, 2 * ro - 1)
         p.setPen(QPen(pal.line, 1))
         p.setBrush(theme.alpha(pal.surface, 0.97))
         p.drawEllipse(disc)
@@ -428,7 +440,7 @@ class Wheel(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             face = theme.alpha(pal.signal, 0.85 * flash) if flash else theme.alpha(pal.raised, glow)
             p.setBrush(face)
-            p.drawPath(self._sector(c, R_IN + 2, R_OUT - 16, sel_deg + span / 2, -span))
+            p.drawPath(self._sector(c, R_IN + 2, ro - 16, sel_deg + span / 2, -span))
 
         sweep = _clamp((t - 0.1) / 0.7)
         boundaries = {round(((i + 0.5) * span) / 5) % TICKS for i in range(n)} if n > 1 else set()
@@ -441,10 +453,10 @@ class Wheel(QWidget):
             lit = n and glow > 0.01 and abs(off) < span / 2 - 1.5
             ink = theme.alpha(pal.signal, glow) if lit else pal.muted if major else theme.alpha(pal.muted, 0.45)
             p.setPen(QPen(ink, 1.6 if lit else 1))
-            p.drawLine(QLineF(_polar(c, R_OUT - 4, deg), _polar(c, R_OUT - (12 if major else 8), deg)))
+            p.drawLine(QLineF(_polar(c, ro - 4, deg), _polar(c, ro - (12 if major else 8), deg)))
 
         if n and glow > 0.01:
-            r = R_OUT - 15
+            r = ro - 15
             arc = QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r)
             p.setPen(QPen(theme.alpha(pal.signal, glow), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -454,7 +466,7 @@ class Wheel(QWidget):
             p.setPen(QPen(pal.line, 1))
             for i in range(n):
                 deg = 90 - i * span + span / 2
-                p.drawLine(QLineF(_polar(c, R_IN + 8, deg), _polar(c, R_OUT - 20, deg)))
+                p.drawLine(QLineF(_polar(c, R_IN + 8, deg), _polar(c, ro - 20, deg)))
 
         for i, item in enumerate(self.items):
             local = _clamp((t - 0.1 - 0.35 * i / max(n, 1)) / 0.3)
@@ -463,7 +475,7 @@ class Wheel(QWidget):
             mid = 90 - i * span
             hovered = i == self.hover
             colour = pal.signal if hovered else pal.text
-            pt = _polar(c, (R_IN + R_OUT - 16) / 2 + 2, mid)
+            pt = _polar(c, (R_IN + ro - 16) / 2 + 2, mid)
             base = p.opacity()
             p.setOpacity(base * local)
             p.setPen(colour)
