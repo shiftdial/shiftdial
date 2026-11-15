@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sys
-import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -265,8 +264,6 @@ def tool_watermark(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> lis
 
 
 MODEL = "isnet-general-use.onnx"  # IS-Net (DIS), Apache-2.0; build.ps1 downloads and verifies it
-_session: Any = None
-_session_lock = threading.Lock()
 
 
 def model_path() -> Path:
@@ -275,25 +272,24 @@ def model_path() -> Path:
     return base / "models" / MODEL
 
 
-def _matting() -> Any:
-    """The background-removal model, loaded once (about a second) and shared by jobs."""
-    global _session
-    with _session_lock:
-        if _session is None:
-            path = model_path()
-            if not path.exists():
-                raise ValueError(f"Remove background needs {MODEL}. Run build.ps1 once to download it.")
-            import onnxruntime
+def matting_session() -> Any:
+    """Load the background-removal model (about half a second). Loaded per job, not kept: a tray app
+    shouldn't hold ~200 MB all day after one use."""
+    path = model_path()
+    if not path.exists():
+        raise ValueError(f"Remove background needs {MODEL}. Run build.ps1 once to download it.")
+    import onnxruntime
 
-            _session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-        return _session
+    opts = onnxruntime.SessionOptions()
+    opts.enable_cpu_mem_arena = False  # the arena kept ~600 MB per image and never gave it back
+    opts.enable_mem_pattern = False  # peak drops from ~1 GB to ~700 MB at the same speed
+    return onnxruntime.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
 
 
-def cutout(im: Image.Image) -> Image.Image:
+def cutout(im: Image.Image, session: Any) -> Image.Image:
     """``im`` with a transparent background: the model predicts a 0..1 foreground mask at 1024 px."""
     import numpy as np
 
-    session = _matting()
     rgb = im.convert("RGB")
     x = np.asarray(rgb.resize((1024, 1024), Image.LANCZOS), dtype=np.float32) / 255.0
     x = (x - 0.5).transpose(2, 0, 1)[None]  # IS-Net's normalisation: mean 0.5, std 1
@@ -308,10 +304,12 @@ def cutout(im: Image.Image) -> Image.Image:
 def tool_nobg(paths: list[Path], p: dict[str, Any], ctx: JobContext) -> list[Path]:
     """Each image as '<name> cutout.png' with the background made transparent."""
     outputs: list[Path] = []
+    ctx.progress(0.0, "Loading the model")
+    session = matting_session()
     for i, src in enumerate(paths):
         ctx.check()
         ctx.progress(i / len(paths), f"Removing background from {src.name}")
-        result = cutout(load(src))
+        result = cutout(load(src), session)
         with Output(src.parent, f"{split_ext(src.name)[0]} cutout", "png") as out:
             result.save(out.tmp, "PNG", optimize=True)
         outputs.append(out.final)
